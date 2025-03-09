@@ -1,5 +1,3 @@
-
-
 class Buzzle:
     def __init__(self, data = [[]]):
         self.data = [[1,2,3],
@@ -13,7 +11,10 @@ class Buzzle:
         return False
     def print_state(self):
         print("Trang thai hien tai: ")
-        print(self.data)
+        for i in range(3):
+            for j in range(3):
+                print(self.data[i][j], end=" ")
+            print("\n")
 
     def entry_state(self):
         print("Nhap trang thai: ")
@@ -60,10 +61,9 @@ def create_new_state(A: Buzzle, move):
                     A.data[i][j], A.data[i][j+1] = A.data[i][j+1], A.data[i][j]
                     return {"Yes", A}
                 
+                
+moves = {"up", "down", "left", "right"}                
 A = Buzzle()
 
 A.entry_state()
 A.print_state()
-
-if (A.is_goal()):
-    print("Dat trang thai cuoi cung!")
