@@ -5,7 +5,7 @@ import math
 import sys # Import sys để điều chỉnh giới hạn đệ quy
 
 # Import các thành phần cần thiết từ buzzle_logic
-from buzzle_logic import Buzzle, create_new_state, manhattan_distance, is_solvable
+from src.core.buzzle_logic import Buzzle, create_new_state, manhattan_distance, is_solvable
 
 # --- Thuật toán tìm kiếm không thông tin ---
 

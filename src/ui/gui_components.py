@@ -7,8 +7,8 @@ from PyQt5.QtGui import QFont
 import random # Cần cho random generation trong panel (nếu có)
 
 # Import các thành phần logic và quản lý thuật toán
-from buzzle_logic import Buzzle, generate_random_solvable_state, is_solvable
-from algorithm_manager import get_algorithm_groups, solve_puzzle
+from src.core.buzzle_logic import Buzzle, generate_random_solvable_state, is_solvable
+from src.algorithms.algorithm_manager import get_algorithm_groups, solve_puzzle
 
 # --- Solver Thread ---
 class SolverThread(QThread):

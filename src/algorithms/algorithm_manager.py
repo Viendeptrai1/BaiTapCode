@@ -1,19 +1,17 @@
 # Import các thuật toán từ module search_algorithms
-from search_algorithms import (
+from .search_algorithms import (
     bfs, dfs, ucs, ids,
     astar, greedy, idastar,
     hill_climbing_max, hill_climbing_random, simulated_annealing,
     genetic_algorithm
 )
 
-# Import hàm tìm kiếm AND/OR từ buzzleTuan9.py
-from buzzleTuan9 import and_or_graph_search
+# Import hàm tìm kiếm AND/OR từ and_or_search.py
+from .and_or_search import and_or_graph_search
 
-# Import lớp adapter từ file AndOrProblemAdapter
-from AndOrProblemAdapter import AndOrProblemAdapter
-
-# Import các hàm logic cần thiết
-from buzzle_logic import is_solvable, Buzzle, create_new_state
+# Import các thành phần core
+from src.core.AndOrProblemAdapter import AndOrProblemAdapter
+from src.core.buzzle_logic import is_solvable, Buzzle, create_new_state
 
 def get_algorithm_groups():
     """
