@@ -232,7 +232,7 @@ class SolutionNavigationPanel(QWidget):
             # Hiển thị bước từ 1 trở đi
             move, state_data = self.solution_path[self.current_step_index - 1]
             current_state_data = state_data
-            move_text = f"Move: {move.capitalize()}"
+            move_text = f"Move: {move.capitalize() if move is not None else 'None'}"
         else:
              # Index không hợp lệ (nên không xảy ra)
              print(f"Error: Invalid step index {self.current_step_index}")
@@ -476,7 +476,7 @@ class ResultPanel(QWidget):
             "hill_climbing_random": "Hill Climbing (with Random Sidesteps):\n- Similar to steepest ascent Hill Climbing.\n- When stuck (no better neighbors), it allows a limited number of random moves to equal-heuristic neighbors (sidesteps) to potentially escape plateaus.",
             "simulated_annealing": "Simulated Annealing (SA):\n- Probabilistic local search algorithm inspired by annealing in metallurgy.\n- Allows moves to worse states with a probability that decreases over time (as 'temperature' cools).\n- Helps escape local minima.\n- Does not guarantee optimality; finds a good solution.",
             "genetic_algorithm": "Genetic Algorithm (GA):\n- Evolutionary algorithm inspired by natural selection.\n- Maintains a population of candidate solutions (states).\n- Uses selection, crossover (recombination), and mutation to evolve the population over generations.\n- Good for large search spaces; finds good solutions but not necessarily the optimal path.",
-            "simplified_or_search": "Simplified OR Search (Recursive):\n- A recursive graph search that explores possible action sequences.\n- Essentially behaves like Depth-First Search due to its recursive nature.\n- Uses path checking to avoid cycles.\n\n- WARNING: This recursive implementation may exceed Python's maximum recursion depth on puzzles requiring very long solutions, leading to a RecursionError. Consider A* or IDA* for complex cases."
+            "belief_bfs": "Belief State BFS (POMDP):\n- Mô hình POMDP (Partially Observable Markov Decision Process).\n- BAN ĐẦU: Chỉ biết 6 ô đầu (hàng 1 và hàng 2), không biết 3 ô cuối (hàng 3).\n- TÌM KIẾM: Duy trì một tập hợp các trạng thái có thể (belief state).\n- QUAN SÁT: Sau mỗi hành động, chỉ quan sát được 6 ô đầu, không biết trạng thái thực tế đầy đủ.\n- NIỀM TIN: Cập nhật tập trạng thái có thể dựa trên hành động và quan sát mới.\n- MỤC TIÊU: Thu hẹp niềm tin xuống còn một trạng thái duy nhất (trạng thái đích)."
         }
 
 
@@ -496,7 +496,7 @@ class ResultPanel(QWidget):
             text += "\n(No solution found or algorithm does not provide a path)"
         else:
             for i, (move, state) in enumerate(path, 1):
-                text += f"Step {i}: Move {move.capitalize()}\n"
+                text += f"Step {i}: Move {move.capitalize() if move is not None else 'None'}\n"
                 for row in state:
                     text += f"  {row}\n"
                 text += "-" * 20 + "\n"

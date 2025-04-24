@@ -914,3 +914,61 @@ def genetic_algorithm(initial_state, population_size=100, generations=200, mutat
          # Không tìm thấy lời giải (goal state)
          return [], nodes_evaluated, max_pop_size
 
+# --- CSP Backtracking Search Algorithm ---
+def backtracking_search(initial_state):
+    """
+    CSP Backtracking Search for 8-puzzle.
+    Variables: 9 positions (row,col)
+    Domain: {0..8} for each variable
+    Constraint: all values must be unique (all-different)
+    Returns: path (list of (var, val)), nodes_expanded, max_fringe_size
+    """
+    variables = [(i, j) for i in range(3) for j in range(3)]
+    domains = {var: set(range(9)) for var in variables}
+    assignment = dict()
+    nodes_expanded = 0
+    max_fringe_size = 0
+    result = []
+    
+    def is_complete(assignment):
+        return len(assignment) == 9
+    
+    def select_unassigned_variable(assignment, variables):
+        for var in variables:
+            if var not in assignment:
+                return var
+        return None
+
+    def is_consistent(var, value, assignment):
+        return value not in assignment.values()
+
+    def backtrack(assignment):
+        nonlocal nodes_expanded, max_fringe_size
+        if is_complete(assignment):
+            return assignment
+        var = select_unassigned_variable(assignment, variables)
+        for value in domains[var]:
+            if is_consistent(var, value, assignment):
+                assignment[var] = value
+                nodes_expanded += 1
+                max_fringe_size = max(max_fringe_size, len(assignment))
+                result.append((var, value))
+                sol = backtrack(assignment)
+                if sol is not None:
+                    return sol
+                result.pop()
+                del assignment[var]
+        return None
+
+    solution = backtrack(assignment)
+    # Convert assignment to board if found
+    if solution:
+        board = [[-1 for _ in range(3)] for _ in range(3)]
+        for (i, j), val in solution.items():
+            board[i][j] = val
+        # Optionally: check is_solvable(board)
+        # Return as a single step path for CSP
+        return [((None, board))], nodes_expanded, max_fringe_size
+    else:
+        return [], nodes_expanded, max_fringe_size
+

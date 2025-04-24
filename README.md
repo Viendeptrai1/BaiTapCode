@@ -25,12 +25,7 @@
 - Hill Climbing Max
 - Hill Climbing Random
 - Simulated Annealing
-
-### Thuật toán tiến hóa (Evolutionary Algorithms)
 - Genetic Algorithm
-
-### Tìm kiếm dựa trên đồ thị (Graph-based)
-- Simplified OR Search (AND/OR Graph Search)
 
 ## Cấu trúc dự án
 
@@ -42,12 +37,10 @@
     ├── __init__.py        # Package mã nguồn
     ├── core/              # Module cho logic cốt lõi
     │   ├── __init__.py
-    │   ├── buzzle_logic.py            # Định nghĩa lớp Buzzle và các hàm xử lý trạng thái
-    │   └── AndOrProblemAdapter.py     # Adapter cho thuật toán AND/OR search
+    │   └── buzzle_logic.py            # Định nghĩa lớp Buzzle và các hàm xử lý trạng thái
     ├── algorithms/        # Module cho các thuật toán tìm kiếm
     │   ├── __init__.py
     │   ├── algorithm_manager.py       # Quản lý và cung cấp giao diện chung cho các thuật toán
-    │   ├── and_or_search.py           # Cài đặt thuật toán AND/OR graph search
     │   └── search_algorithms.py       # Cài đặt các thuật toán tìm kiếm
     ├── ui/                # Module cho giao diện người dùng
     │   ├── __init__.py
