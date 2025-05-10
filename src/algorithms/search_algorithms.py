@@ -693,11 +693,10 @@ def simulated_annealing(initial_state, initial_temp=100, cooling_rate=0.995, min
          # Có thể trả về trạng thái tốt nhất tìm được nếu muốn, nhưng giao diện đang mong path
          return [], nodes_evaluated, max_neighbors_considered
 
-# --- Thuật toán Tiến hóa (Genetic Algorithm) ---
-
+# --- Genetic Algorithm Helper Functions ---
 def calculate_fitness(state_data):
     """Hàm đánh giá độ thích nghi (fitness). Giá trị càng cao càng tốt."""
-    # Cách 1: Số ô đúng vị trí (cao hơn là tốt hơn)
+    # Số ô đúng vị trí (cao hơn là tốt hơn)
     goal = [[1, 2, 3], [4, 5, 6], [7, 8, 0]]
     correct_tiles = 0
     for r in range(3):
@@ -706,11 +705,6 @@ def calculate_fitness(state_data):
             if state_data[r][c] != 0 and state_data[r][c] == goal[r][c]:
                 correct_tiles += 1
     return correct_tiles
-
-    # Cách 2: Nghịch đảo Manhattan distance + 1 (cao hơn là tốt hơn)
-    # dist = manhattan_distance(Buzzle(state_data))
-    # return 1 / (1 + dist)
-
 
 def generate_initial_population(initial_state_data, size=100):
     """
@@ -738,8 +732,7 @@ def generate_initial_population(initial_state_data, size=100):
     if len(population_data) < size:
          print(f"Warning: Could only generate {len(population_data)} unique solvable states for initial population.")
 
-    return population_data # Trả về list các list data
-
+    return population_data
 
 def select_parents_tournament(population_data, fitness_scores, num_parents, tournament_size=5):
     """Chọn cha mẹ bằng Tournament Selection."""
@@ -796,13 +789,7 @@ def crossover_single_point(parent1_data, parent2_data):
     else:
          child2_data = parent2_data
 
-
-    # Quan trọng: Đảm bảo con cái cũng solvable? (Tùy chọn, có thể làm chậm)
-    # if not is_solvable(child1_data): child1_data = parent1_data
-    # if not is_solvable(child2_data): child2_data = parent2_data
-
     return child1_data, child2_data
-
 
 def mutate_swap(state_data, mutation_rate=0.1):
     """Đột biến bằng cách di chuyển ngẫu nhiên ô trống."""
@@ -819,6 +806,7 @@ def mutate_swap(state_data, mutation_rate=0.1):
     # Nếu không đột biến hoặc không có nước đi hợp lệ, trả về trạng thái gốc
     return state_data
 
+# --- Genetic Algorithm Implementation ---
 def genetic_algorithm(initial_state, population_size=100, generations=200, mutation_rate=0.1, elitism_rate=0.1):
     """Genetic Algorithm for 8-puzzle."""
     population_data = generate_initial_population(initial_state.data, population_size)
@@ -914,61 +902,5 @@ def genetic_algorithm(initial_state, population_size=100, generations=200, mutat
          # Không tìm thấy lời giải (goal state)
          return [], nodes_evaluated, max_pop_size
 
-# --- CSP Backtracking Search Algorithm ---
-def backtracking_search(initial_state):
-    """
-    CSP Backtracking Search for 8-puzzle.
-    Variables: 9 positions (row,col)
-    Domain: {0..8} for each variable
-    Constraint: all values must be unique (all-different)
-    Returns: path (list of (var, val)), nodes_expanded, max_fringe_size
-    """
-    variables = [(i, j) for i in range(3) for j in range(3)]
-    domains = {var: set(range(9)) for var in variables}
-    assignment = dict()
-    nodes_expanded = 0
-    max_fringe_size = 0
-    result = []
-    
-    def is_complete(assignment):
-        return len(assignment) == 9
-    
-    def select_unassigned_variable(assignment, variables):
-        for var in variables:
-            if var not in assignment:
-                return var
-        return None
-
-    def is_consistent(var, value, assignment):
-        return value not in assignment.values()
-
-    def backtrack(assignment):
-        nonlocal nodes_expanded, max_fringe_size
-        if is_complete(assignment):
-            return assignment
-        var = select_unassigned_variable(assignment, variables)
-        for value in domains[var]:
-            if is_consistent(var, value, assignment):
-                assignment[var] = value
-                nodes_expanded += 1
-                max_fringe_size = max(max_fringe_size, len(assignment))
-                result.append((var, value))
-                sol = backtrack(assignment)
-                if sol is not None:
-                    return sol
-                result.pop()
-                del assignment[var]
-        return None
-
-    solution = backtrack(assignment)
-    # Convert assignment to board if found
-    if solution:
-        board = [[-1 for _ in range(3)] for _ in range(3)]
-        for (i, j), val in solution.items():
-            board[i][j] = val
-        # Optionally: check is_solvable(board)
-        # Return as a single step path for CSP
-        return [((None, board))], nodes_expanded, max_fringe_size
-    else:
-        return [], nodes_expanded, max_fringe_size
+# The CSP Backtracking Search and complex environment search code has been removed
 

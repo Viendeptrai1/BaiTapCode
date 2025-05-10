@@ -231,7 +231,14 @@ class SolutionNavigationPanel(QWidget):
         elif 0 < self.current_step_index <= len(self.solution_path):
             # Hiển thị bước từ 1 trở đi
             move, state_data = self.solution_path[self.current_step_index - 1]
-            current_state_data = state_data
+            
+            # Verify state_data is valid
+            if state_data is None:
+                print(f"Warning: None state data at step {self.current_step_index}")
+                current_state_data = self.initial_state_data  # Fallback to initial state
+            else:
+                current_state_data = state_data
+                
             move_text = f"Move: {move.capitalize() if move is not None else 'None'}"
         else:
              # Index không hợp lệ (nên không xảy ra)
@@ -242,7 +249,6 @@ class SolutionNavigationPanel(QWidget):
         self.move_desc.setText(move_text)
         # Gửi tín hiệu trạng thái hiện tại đã thay đổi
         self.solution_step_changed.emit(current_state_data)
-
 
     def go_to_next_step(self):
         """Go to next step in solution"""
@@ -393,13 +399,14 @@ class AlgorithmSelectionPanel(QGroupBox):
         # Tạo radio button cho từng thuật toán theo nhóm
         for i, (group_name, algorithms) in enumerate(self.algorithm_groups.items()):
             group_box = QGroupBox(group_name)
+            group_box.setFont(QFont('Arial', 11, QFont.Bold))
             group_layout = QVBoxLayout()
             group_layout.setSpacing(3)
 
             for algo_key, algo_name in algorithms.items():
                 radio_btn = QRadioButton(algo_name)
                 radio_btn.setObjectName(algo_key) # Lưu key để lấy lại sau
-                radio_btn.setFont(QFont('Arial', 9))
+                radio_btn.setFont(QFont('Arial', 11))
                 self.algorithm_radio_buttons[algo_key] = radio_btn
                 self.button_group.addButton(radio_btn)
                 group_layout.addWidget(radio_btn)
@@ -476,9 +483,25 @@ class ResultPanel(QWidget):
             "hill_climbing_random": "Hill Climbing (with Random Sidesteps):\n- Similar to steepest ascent Hill Climbing.\n- When stuck (no better neighbors), it allows a limited number of random moves to equal-heuristic neighbors (sidesteps) to potentially escape plateaus.",
             "simulated_annealing": "Simulated Annealing (SA):\n- Probabilistic local search algorithm inspired by annealing in metallurgy.\n- Allows moves to worse states with a probability that decreases over time (as 'temperature' cools).\n- Helps escape local minima.\n- Does not guarantee optimality; finds a good solution.",
             "genetic_algorithm": "Genetic Algorithm (GA):\n- Evolutionary algorithm inspired by natural selection.\n- Maintains a population of candidate solutions (states).\n- Uses selection, crossover (recombination), and mutation to evolve the population over generations.\n- Good for large search spaces; finds good solutions but not necessarily the optimal path.",
-            "belief_bfs": "Belief State BFS (POMDP):\n- Mô hình POMDP (Partially Observable Markov Decision Process).\n- BAN ĐẦU: Chỉ biết 6 ô đầu (hàng 1 và hàng 2), không biết 3 ô cuối (hàng 3).\n- TÌM KIẾM: Duy trì một tập hợp các trạng thái có thể (belief state).\n- QUAN SÁT: Sau mỗi hành động, chỉ quan sát được 6 ô đầu, không biết trạng thái thực tế đầy đủ.\n- NIỀM TIN: Cập nhật tập trạng thái có thể dựa trên hành động và quan sát mới.\n- MỤC TIÊU: Thu hẹp niềm tin xuống còn một trạng thái duy nhất (trạng thái đích)."
+            "belief_bfs": "Belief State BFS (POMDP):\n- Mô hình POMDP (Partially Observable Markov Decision Process).\n- BAN ĐẦU: Chỉ biết 6 ô đầu (hàng 1 và hàng 2), không biết 3 ô cuối (hàng 3).\n- TÌM KIẾM: Duy trì một tập hợp các trạng thái có thể (belief state).\n- QUAN SÁT: Sau mỗi hành động, chỉ quan sát được 6 ô đầu, không biết trạng thái thực tế đầy đủ.\n- NIỀM TIN: Cập nhật tập trạng thái có thể dựa trên hành động và quan sát mới.\n- MỤC TIÊU: Thu hẹp niềm tin xuống còn một trạng thái duy nhất (trạng thái đích).",
+            "belief_state_search": (
+                "Belief State Search:\n\n"
+                "- Used in partially observable environments where the agent cannot see the complete state.\n"
+                "- Maintains a 'belief state' - a set of all possible states consistent with observations.\n"
+                "- Observation modes:\n"
+                "  * Partial: Only the first 6 cells (top 2 rows) are visible\n"
+                "  * Blind: No cells are visible\n"
+                "  * Custom: User-defined visibility mask\n\n"
+                "- Search process:\n"
+                "  1. Initialize with all possible states consistent with initial observation\n"
+                "  2. For each action:\n"
+                "     a. Apply the action to each possible state\n"
+                "     b. Make a new observation\n"
+                "     c. Filter states that would not produce this observation\n"
+                "  3. Goal: Reduce belief state to only the goal state\n\n"
+                "- Applications: Robotics, sensor networks, any domain with limited sensing"
+            )
         }
-
 
     def update_path_display(self, initial_state_data, path):
         """Cập nhật hiển thị đường đi text."""
@@ -486,6 +509,61 @@ class ResultPanel(QWidget):
              self.path_display.setText("No initial state loaded.")
              return
 
+        # Special handling for backtracking search
+        if hasattr(self, 'is_backtracking') and self.is_backtracking:
+            node_count = len(path) if path else 0
+            text = "Backtracking Search Process:\n\n"
+            text += f"Total nodes explored: {node_count}\n\n"
+            text += "Initial State:\n"
+            for row in initial_state_data:
+                text += f"  {row}\n"
+            text += "-" * 30 + "\n\n"
+            
+            # Show the backtracking process with variable assignments and backtracks
+            if path:
+                # Display a representation of the search tree/process
+                text += "Search Process:\n"
+                current_depth = 0
+                assignment_history = []
+                
+                for i, (move, state) in enumerate(path):
+                    # We'll simulate the backtracking process based on the moves
+                    if move == "assignment":  # Variable assignment
+                        current_depth += 1
+                        indent = "  " * current_depth
+                        var_name = f"var{current_depth}" if state else "?"
+                        val = f"val{current_depth}" if state else "?"
+                        text += f"{indent}Assign {var_name} = {val}\n"
+                        assignment_history.append((var_name, val))
+                        
+                    elif move == "backtrack":  # Backtracking step
+                        if assignment_history:
+                            var, val = assignment_history.pop()
+                            text += f"{indent}Backtrack: remove {var} = {val}\n"
+                            current_depth -= 1
+                    
+                    elif i % 10 == 0:  # Show some states periodically to avoid overwhelming
+                        indent = "  " * current_depth
+                        text += f"{indent}Exploring state {i}:\n"
+                        if state:
+                            for row in state:
+                                text += f"{indent}  {row}\n"
+                
+                # Show final solution if available
+                if path and path[-1][1]:
+                    text += "\nFinal Solution Found:\n"
+                    final_state = path[-1][1]
+                    for row in final_state:
+                        text += f"  {row}\n"
+                else:
+                    text += "\nNo solution found after exploring all possibilities.\n"
+            else:
+                text += "No search process data available."
+            
+            self.path_display.setText(text)
+            return
+        
+        # Standard display for other algorithms
         text = "Solution Path:\n\n"
         text += "Step 0: Initial State\n"
         for row in initial_state_data:
@@ -504,6 +582,10 @@ class ResultPanel(QWidget):
         self.path_display.setText(text)
         self.path_display.verticalScrollBar().setValue(0) # Cuộn lên đầu
 
+    def set_backtracking_mode(self, is_backtracking=False):
+        """Set whether this panel should display backtracking results (just stats)."""
+        self.is_backtracking = is_backtracking
+
     def update_algorithm_description(self, algo_key):
         """Cập nhật mô tả thuật toán dựa trên key."""
         description = self.descriptions.get(algo_key.lower(), "No description available for this algorithm.")
@@ -511,6 +593,5 @@ class ResultPanel(QWidget):
         self.algo_desc.verticalScrollBar().setValue(0) # Cuộn lên đầu
 
     def clear_displays(self):
-        """Xóa nội dung hiển thị"""
         self.path_display.clear()
         self.algo_desc.clear()

@@ -68,6 +68,14 @@ class Buzzle:
 
 def create_new_state(data, move):
     """Tạo trạng thái mới từ data và move. Trả về (True, new_data) hoặc (False, None)."""
+    if not data or not isinstance(data, list) or len(data) != 3:
+        return False, None
+        
+    # Validate each row
+    for row in data:
+        if not isinstance(row, list) or len(row) != 3:
+            return False, None
+            
     # Tạo bản sao sâu để tránh thay đổi trạng thái gốc
     new_data = [list(row) for row in data]
     blank_pos = None
@@ -148,3 +156,34 @@ def generate_random_solvable_state():
         state_data = [numbers[i:i+3] for i in range(0, 9, 3)]
         if is_solvable(state_data):
             return state_data
+
+def parse_puzzle_input(input_text):
+    """
+    Parse a string input into a 2D array for the Buzzle puzzle.
+    
+    Args:
+        input_text (str): Space-separated numbers representing the puzzle state.
+            Example: "1 2 3 4 0 6 7 5 8"
+    
+    Returns:
+        list: 3x3 2D array representing the puzzle state.
+    
+    Raises:
+        ValueError: If the input doesn't contain exactly 9 numbers or doesn't contain all numbers 0-8.
+    """
+    try:
+        numbers = [int(x) for x in input_text.split()]
+        if len(numbers) != 9:
+            raise ValueError("Input must contain exactly 9 numbers.")
+            
+        if set(numbers) != set(range(9)):
+            raise ValueError("Input must contain all numbers from 0 to 8 exactly once.")
+            
+        # Convert the flat list into a 3x3 grid
+        grid = [numbers[i:i+3] for i in range(0, 9, 3)]
+        return grid
+        
+    except Exception as e:
+        if isinstance(e, ValueError) and str(e).startswith("Input must"):
+            raise
+        raise ValueError(f"Invalid input format: {e}")

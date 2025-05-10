@@ -3,7 +3,7 @@ from .search_algorithms import (
     bfs, dfs, ucs, ids,
     astar, greedy, idastar,
     hill_climbing_max, hill_climbing_random, simulated_annealing,
-    genetic_algorithm, backtracking_search
+    genetic_algorithm
 )
 
 
@@ -32,9 +32,6 @@ def get_algorithm_groups():
             "hill_climbing_random": "Hill Climbing Random",
             "simulated_annealing": "Simulated Annealing",
             "genetic_algorithm": "Genetic Algorithm"
-        },
-        "Tìm kiếm quay lui (Backtracking Search - CSP)": {
-            "backtracking_search": "Backtracking Search (CSP Representation)"
         }
     }
     return groups
@@ -51,8 +48,7 @@ SOLVER_FUNCTIONS = {
     "hill_climbing_max": hill_climbing_max,
     "hill_climbing_random": hill_climbing_random,
     "simulated_annealing": simulated_annealing,
-    "genetic_algorithm": genetic_algorithm,
-    "backtracking_search": backtracking_search
+    "genetic_algorithm": genetic_algorithm
 }
 
 # Các thuật toán không cần kiểm tra is_solvable() trước khi chạy
