@@ -1,16 +1,20 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout,
                            QVBoxLayout, QMessageBox, QProgressBar, QLabel,
-                           QTabWidget, QPushButton, QGroupBox, QGridLayout)
+                           QTabWidget, QPushButton, QGroupBox, QGridLayout,
+                           QLineEdit, QTextEdit)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import time
 import traceback
 import itertools
+from PyQt5.QtGui import QFont
 
 # Import các thành phần GUI và logic từ các module khác
 from src.core.buzzle_logic import Buzzle, generate_random_solvable_state, is_solvable, parse_puzzle_input
 from .gui_components import (PuzzleBoard, SolutionNavigationPanel, ControlPanel,
                             ResultPanel, SolverThread)
+# Import the new algorithm
+from src.algorithms.and_or_graph_search import NonDeterministicPuzzle, and_or_search, FAILURE, EMPTY_PLAN
 
 class PuzzleWindow(QMainWindow):
     def __init__(self):
@@ -25,6 +29,11 @@ class PuzzleWindow(QMainWindow):
         self.normal_tab = QWidget()
         self.init_normal_tab()
         self.tab_widget.addTab(self.normal_tab, "Standard Algorithms")
+
+        # Create and add the uninformed search tab
+        self.uninformed_search_tab = QWidget()
+        self.init_uninformed_search_tab()
+        self.tab_widget.addTab(self.uninformed_search_tab, "Tìm kiếm trong môi trường không xác định")
         
         # Set the tab widget as the central widget
         self.setCentralWidget(self.tab_widget)
@@ -49,6 +58,12 @@ class PuzzleWindow(QMainWindow):
     def on_tab_changed(self, index):
         """Handle tab change events"""
         # You can update tab-specific content here if needed
+        current_tab_name = self.tab_widget.tabText(index)
+        if current_tab_name == "Tìm kiếm trong môi trường không xác định":
+            # Placeholder for actions specific to the new tab
+            print("Switched to Uninformed Search Tab") 
+            # You might want to initialize or refresh elements specific to this tab here
+            pass
         pass
 
     def init_normal_tab(self):
@@ -103,6 +118,180 @@ class PuzzleWindow(QMainWindow):
         )
         # Cập nhật mô tả cho thuật toán mặc định ban đầu
         self.update_algorithm_description(self.control_panel.algo_select_panel.get_selected_algorithm())
+
+    def init_uninformed_search_tab(self):
+        """Khởi tạo tab cho các thuật toán tìm kiếm trong môi trường không xác định."""
+        # Main layout for this tab
+        main_tab_layout = QHBoxLayout(self.uninformed_search_tab)
+
+        # --- Left Panel: States and Controls ---
+        left_panel_widget = QWidget()
+        left_panel_layout = QVBoxLayout(left_panel_widget)
+
+        # States Group (Initial and Goal Boards)
+        states_group = QGroupBox("Puzzle States (2x2)")
+        states_group_layout = QHBoxLayout()
+        
+        self.initial_state_board_uninformed = PuzzleBoard(title="Initial State", size=2)
+        self.goal_state_board_uninformed = PuzzleBoard(title="Goal State", size=2)
+        self.fixed_goal_state_2x2 = [[1, 2], [3, 0]]
+        self.goal_state_board_uninformed.update_board(self.fixed_goal_state_2x2)
+        self.goal_state_board_uninformed.setEnabled(False) # Goal state is fixed
+
+        states_group_layout.addWidget(self.initial_state_board_uninformed)
+        states_group_layout.addWidget(self.goal_state_board_uninformed)
+        states_group.setLayout(states_group_layout)
+
+        # Input and Controls Group
+        controls_group = QGroupBox("Input and Controls")
+        controls_layout = QGridLayout(controls_group) # Using QGridLayout for better alignment
+
+        label_input = QLabel("Initial state (4 numbers, 0 for blank, e.g., 1 0 2 3):")
+        self.initial_state_input_uninformed = QLineEdit()
+        self.initial_state_input_uninformed.setPlaceholderText("e.g., 1 0 2 3")
+        self.initial_state_input_uninformed.setText("0 1 2 3") # Default example
+        self.load_button_uninformed = QPushButton("Load State")
+        self.solve_button_uninformed = QPushButton("Solve (AND-OR Search)")
+        self.reset_button_uninformed = QPushButton("Reset Input")
+
+        controls_layout.addWidget(label_input, 0, 0, 1, 2) # Span 2 columns
+        controls_layout.addWidget(self.initial_state_input_uninformed, 1, 0, 1, 2) # Span 2 columns
+        controls_layout.addWidget(self.load_button_uninformed, 2, 0)
+        controls_layout.addWidget(self.reset_button_uninformed, 2, 1)
+        controls_layout.addWidget(self.solve_button_uninformed, 3, 0, 1, 2) # Span 2 columns
+        
+        # Add groups to left panel
+        left_panel_layout.addWidget(states_group)
+        left_panel_layout.addWidget(controls_group)
+        left_panel_layout.addStretch() # Push controls to the top
+
+        # --- Right Panel: Plan Display ---
+        right_panel_widget = QWidget()
+        right_panel_layout = QVBoxLayout(right_panel_widget)
+        
+        plan_display_group = QGroupBox("Conditional Plan")
+        plan_display_layout = QVBoxLayout(plan_display_group)
+        self.plan_display_area_uninformed = QTextEdit()
+        self.plan_display_area_uninformed.setReadOnly(True)
+        self.plan_display_area_uninformed.setFont(QFont("Courier New", 10))
+        self.plan_display_area_uninformed.setPlaceholderText("Conditional plan will be displayed here.")
+        plan_display_layout.addWidget(self.plan_display_area_uninformed)
+        
+        right_panel_layout.addWidget(plan_display_group)
+
+        # Add panels to the main tab layout
+        main_tab_layout.addWidget(left_panel_widget, stretch=1)
+        main_tab_layout.addWidget(right_panel_widget, stretch=2) # Plan display gets more space
+
+        self.uninformed_search_tab.setLayout(main_tab_layout)
+
+        # --- Connect signals for this tab ---
+        self.load_button_uninformed.clicked.connect(self.load_state_uninformed)
+        self.solve_button_uninformed.clicked.connect(self.solve_uninformed)
+        self.reset_button_uninformed.clicked.connect(self.reset_input_uninformed)
+
+        # Load initial default state for the 2x2 board
+        self.load_state_uninformed() 
+
+    def _parse_2x2_input(self, input_text):
+        """Parses a 4-number string into a 2x2 list of lists."""
+        try:
+            numbers = [int(x) for x in input_text.split()]
+            if len(numbers) != 4:
+                raise ValueError("Input must contain exactly 4 numbers.")
+            if set(numbers) != set(range(4)):
+                raise ValueError("Input must contain numbers 0, 1, 2, 3 exactly once.")
+            return [numbers[0:2], numbers[2:4]]
+        except ValueError as e:
+            QMessageBox.warning(self, "Input Error", str(e))
+            return None
+
+    def load_state_uninformed(self):
+        """Loads the initial state from input for the uninformed search tab."""
+        input_text = self.initial_state_input_uninformed.text()
+        parsed_matrix = self._parse_2x2_input(input_text)
+        if parsed_matrix:
+            self.initial_state_board_uninformed.update_board(parsed_matrix)
+            self.plan_display_area_uninformed.setText("State loaded. Click Solve to find a plan.")
+        else:
+            self.initial_state_board_uninformed.update_board([[0,0],[0,0]]) # Clear board on error
+            self.plan_display_area_uninformed.setText("Invalid input. Please enter 4 unique numbers (0-3).")
+
+    def reset_input_uninformed(self):
+        """Resets the input field and clears displays for the uninformed search tab."""
+        self.initial_state_input_uninformed.setText("0 1 2 3")
+        self.initial_state_board_uninformed.update_board([[0,1],[2,3]])
+        self.plan_display_area_uninformed.clear()
+        self.plan_display_area_uninformed.setPlaceholderText("Conditional plan will be displayed here.")
+
+    def _format_plan_for_display(self, plan, current_state_matrix, indent_level=0):
+        """Recursively formats the conditional plan for display in QTextEdit."""
+        indent = "  " * indent_level
+        if plan == EMPTY_PLAN:
+            return indent + "<GOAL REACHED (Empty Plan)>\n"
+        if plan == FAILURE:
+            return indent + "<FAILURE ENCOUNTERED IN SUBPLAN>\n"
+        if not isinstance(plan, list) or len(plan) != 2:
+            return indent + f"<INVALID PLAN STRUCTURE: {plan}>\n"
+
+        action_coord = plan[0] # (row, col) of tile intended to move
+        outcomes_map = plan[1]
+
+        tile_value = "?"
+        # Check conditions for safely accessing tile_value
+        if current_state_matrix:
+            if 0 <= action_coord[0] < len(current_state_matrix) and \
+               0 <= action_coord[1] < len(current_state_matrix[0]):
+                tile_value = current_state_matrix[action_coord[0]][action_coord[1]]
+        
+        plan_str = indent + f"IF Perform Action (move tile {tile_value} at {action_coord}):\n"
+        
+        for outcome_state_tuple, sub_plan in outcomes_map.items():
+            # Convert outcome_state_tuple (tuple of tuples) to list of lists for display
+            outcome_state_list_of_lists = [list(row) for row in outcome_state_tuple]
+            plan_str += indent + "  " + f"IF Outcome is {outcome_state_list_of_lists}:\n"
+            # The sub-plan starts from this outcome_state
+            plan_str += self._format_plan_for_display(sub_plan, outcome_state_list_of_lists, indent_level + 2)
+        return plan_str
+
+    def solve_uninformed(self):
+        """Handles the solving process for the AND-OR search."""
+        input_text = self.initial_state_input_uninformed.text()
+        initial_matrix = self._parse_2x2_input(input_text)
+
+        if not initial_matrix:
+            self.plan_display_area_uninformed.setText("Cannot solve: Invalid initial state.")
+            return
+
+        self.initial_state_board_uninformed.update_board(initial_matrix)
+        self.plan_display_area_uninformed.setText("Solving with AND-OR Search...")
+        QApplication.processEvents() # Update UI before long computation
+
+        try:
+            problem = NonDeterministicPuzzle(initial_matrix=initial_matrix, 
+                                           goal_matrix=self.fixed_goal_state_2x2,
+                                           size=2)
+            
+            # For AND-OR search, we typically don't run it in a separate thread 
+            # in this simple example unless it becomes very slow. 
+            # If it can be long, a thread like SolverThread would be needed.
+            solution_plan = and_or_search(problem)
+
+            if solution_plan == FAILURE:
+                self.plan_display_area_uninformed.setText("No solution found by AND-OR Search.")
+            elif solution_plan == EMPTY_PLAN:
+                self.plan_display_area_uninformed.setText("Initial state is already the goal state.")
+            else:
+                formatted_plan = self._format_plan_for_display(solution_plan, initial_matrix)
+                self.plan_display_area_uninformed.setText(formatted_plan)
+        
+        except ValueError as ve:
+            QMessageBox.critical(self, "Puzzle Setup Error", str(ve))
+            self.plan_display_area_uninformed.setText(f"Error: {str(ve)}")
+        except Exception as e:
+            import traceback
+            QMessageBox.critical(self, "Solver Error", f"An unexpected error occurred: {str(e)}")
+            self.plan_display_area_uninformed.setText(f"Error: {str(e)}\n{traceback.format_exc()}")
 
     def update_status(self, message, show_progress=False):
         """Cập nhật status bar"""

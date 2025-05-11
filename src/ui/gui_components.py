@@ -54,8 +54,9 @@ class SolverThread(QThread):
 # --- Puzzle Board Widget ---
 class PuzzleBoard(QWidget):
     """Một bảng puzzle đơn lẻ để hiển thị trạng thái"""
-    def __init__(self, title="Puzzle"):
+    def __init__(self, title="Puzzle", size=3):
         super().__init__()
+        self.size = size # Store the size
         layout = QVBoxLayout()
         layout.setSpacing(2) # Giảm khoảng cách
         layout.setContentsMargins(5, 5, 5, 5) # Giảm margins
@@ -84,12 +85,19 @@ class PuzzleBoard(QWidget):
         grid.setSpacing(1) # Khoảng cách giữa các ô
         self.tiles = []
 
-        for i in range(3):
+        for i in range(self.size):
             row = []
-            for j in range(3):
+            for j in range(self.size):
                 btn = QPushButton()
-                btn.setFixedSize(60, 60) # Kích thước nhỏ hơn
-                btn.setFont(QFont('Arial', 18, QFont.Bold)) # Font nhỏ hơn
+                # Adjust button size based on grid size if necessary, for now keep fixed
+                # A more dynamic approach might be needed for very different sizes
+                if self.size == 2:
+                    btn.setFixedSize(80, 80) # Larger for 2x2
+                    btn.setFont(QFont('Arial', 24, QFont.Bold)) # Larger font for 2x2
+                else: # Default to 3x3 sizes
+                    btn.setFixedSize(60, 60) # Kích thước nhỏ hơn
+                    btn.setFont(QFont('Arial', 18, QFont.Bold)) # Font nhỏ hơn
+                
                 btn.setStyleSheet("""
                     QPushButton {
                         background-color: #e8e8e8; /* Màu nền ô */
@@ -120,17 +128,18 @@ class PuzzleBoard(QWidget):
 
     def update_board(self, state_data):
         """Cập nhật hiển thị bảng với state_data (list of lists)"""
-        if not state_data or len(state_data) != 3 or len(state_data[0]) != 3:
+        if not state_data or len(state_data) != self.size or \
+           not all(len(row) == self.size for row in state_data):
              # Xóa bảng nếu dữ liệu không hợp lệ
-             for i in range(3):
-                 for j in range(3):
+             for i in range(self.size):
+                 for j in range(self.size):
                      self.tiles[i][j].setText("")
                      self.tiles[i][j].setProperty("value", 0) # Để style ô trống
                      self.tiles[i][j].setStyleSheet(self.tiles[i][j].styleSheet()) # Cập nhật style
              return
 
-        for i in range(3):
-            for j in range(3):
+        for i in range(self.size):
+            for j in range(self.size):
                 value = state_data[i][j]
                 self.tiles[i][j].setText(str(value) if value != 0 else "")
                 # Cập nhật property để CSS selector hoạt động
@@ -235,7 +244,7 @@ class SolutionNavigationPanel(QWidget):
         """Display the current step board and move description"""
         if self.current_step_index == -1 or self.initial_state_data is None:
             # Trạng thái chưa load hoặc không hợp lệ
-            self.current_step_board.update_board([[0]*3]*3) # Bảng trống
+            self.current_step_board.update_board([[0]*self.size]*self.size) # Bảng trống
             self.move_desc.setText("Load a solution to navigate")
             return
 
