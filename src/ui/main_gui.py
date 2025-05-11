@@ -164,7 +164,7 @@ class PuzzleWindow(QMainWindow):
         self.control_panel.set_stats_text("Ready. Select algorithm and click Solve.")
         self.update_status("Generated random solvable start state.")
 
-    def start_solving(self, algorithm_key):
+    def start_solving(self, algorithm_key, heuristic_key=None):
         """Bắt đầu quá trình giải bằng thuật toán được chọn"""
         if not self.start_state or not hasattr(self.start_state, 'data'):
             QMessageBox.warning(self, "Invalid State", "The start state is not valid.")
@@ -180,12 +180,19 @@ class PuzzleWindow(QMainWindow):
             return
             
         algo_name = self.control_panel.algo_select_panel.algorithm_radio_buttons.get(algorithm_key).text()
-        self.update_status(f"Solving with {algo_name}...", True)
+        
+        # Show heuristic in status if used
+        if heuristic_key:
+            heuristic_name = self.control_panel.local_search_config_panel.HEURISTICS_MAP.get(heuristic_key, "Unknown")
+            self.update_status(f"Solving with {algo_name} using {heuristic_name}...", True)
+        else:
+            self.update_status(f"Solving with {algo_name}...", True)
+            
         self.control_panel.enable_solve_button(False) # Tắt nút Solve
 
         # Chạy thuật toán trong thread riêng
         # Truyền Buzzle object vào thread
-        self.solver_thread = SolverThread(algorithm_key, self.start_state)
+        self.solver_thread = SolverThread(algorithm_key, self.start_state, heuristic_key)
         self.solver_thread.solution_ready.connect(self.on_solution_ready)
         self.solver_thread.error_occurred.connect(self.on_solver_error)
         self.solver_thread.finished.connect(self.on_solver_finished)
@@ -200,13 +207,25 @@ class PuzzleWindow(QMainWindow):
         self.result_panel.update_path_display(self.start_state.data, path)
         # Cập nhật thống kê trên Control Panel
         algo_key = self.control_panel.algo_select_panel.get_selected_algorithm()
+        
+        # Get the heuristic used (if any)
+        heuristic_key = None
+        if self.control_panel.local_search_config_panel.isVisible():
+            heuristic_key = self.control_panel.local_search_config_panel.get_selected_heuristic()
+            
         if path:
             stats = f"Solved in {len(path)} steps.\nNodes evaluated/expanded: {nodes}\nMax fringe/population size: {fringe_or_pop}"
             self.update_status(f"Solution found ({len(path)} steps).", False)
-        elif algo_key.lower() in ["genetic_algorithm", "simulated_annealing", "hill_climbing_max", "hill_climbing_random"]:
-             # Các thuật toán này có thể không tìm thấy goal hoặc không tối ưu path
-             stats = f"Algorithm finished.\nGoal state reached: {Buzzle(self.solution_navigator.current_step_board.tiles).is_goal() if self.solution_navigator.current_step_index > -1 else 'N/A'}\nNodes evaluated: {nodes}\nMax neighbors/population: {fringe_or_pop}"
-             self.update_status(f"{algo_key.upper()} finished. Goal not guaranteed.", False)
+        elif algo_key.lower() in ["genetic_algorithm", "simulated_annealing", "hill_climbing", "random_restart_hc"]:
+            # Các thuật toán local search này có thể không tìm thấy goal
+            final_state = self.solution_navigator.current_step_board.tiles
+            heuristic_info = ""
+            if heuristic_key:
+                heuristic_name = self.control_panel.local_search_config_panel.HEURISTICS_MAP.get(heuristic_key, "Unknown")
+                heuristic_info = f" using {heuristic_name}"
+                
+            stats = f"{algo_key}{heuristic_info} finished.\nGoal state reached: {Buzzle(final_state).is_goal() if self.solution_navigator.current_step_index > -1 else 'N/A'}\nNodes evaluated: {nodes}\nMax neighbors/population: {fringe_or_pop}"
+            self.update_status(f"{algo_key.upper()} finished. Goal not guaranteed.", False)
         else:
             # Các thuật toán tìm kiếm khác không tìm thấy đường đi
             stats = f"No solution found.\nNodes expanded: {nodes}\nMax fringe size: {fringe_or_pop}"

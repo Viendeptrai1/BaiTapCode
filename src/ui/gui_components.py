@@ -9,6 +9,7 @@ import random # Cần cho random generation trong panel (nếu có)
 # Import các thành phần logic và quản lý thuật toán
 from src.core.buzzle_logic import Buzzle, generate_random_solvable_state, is_solvable
 from src.algorithms.algorithm_manager import get_algorithm_groups, solve_puzzle
+from src.algorithms.local_search_algorithms import manhattan_distance, number_of_misplaced_tiles # Fixed import path
 
 # --- Solver Thread ---
 class SolverThread(QThread):
@@ -16,15 +17,32 @@ class SolverThread(QThread):
     solution_ready = pyqtSignal(list, int, int) # path, nodes, fringe/pop_size
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, algorithm_key, start_state):
+    def __init__(self, algorithm_key, start_state, heuristic_key=None): # Added heuristic_key
         super().__init__()
         self.algorithm_key = algorithm_key
         self.start_state = start_state # Nhận Buzzle object
+        self.heuristic_key = heuristic_key # Store heuristic_key
 
     def run(self):
         try:
             # Gọi hàm solve_puzzle từ algorithm_manager
-            path, nodes, fringe_or_pop = solve_puzzle(self.algorithm_key, self.start_state)
+            result, nodes, fringe_or_pop = solve_puzzle(
+                self.algorithm_key, 
+                self.start_state,
+                heuristic_name=self.heuristic_key # Pass heuristic_key
+            )
+            
+            # For local search algorithms, result might be a state instead of a path
+            # Convert to a path format for uniform handling
+            if result is None:
+                # No solution found, use empty path
+                path = []
+            elif not isinstance(result, list):
+                # Create a path with a single step showing the final state
+                path = [("final", result)]
+            else:
+                path = result
+                
             self.solution_ready.emit(path, nodes, fringe_or_pop)
         except Exception as e:
             import traceback
@@ -280,105 +298,126 @@ class ControlPanel(QWidget):
     # Signals gửi đi khi nút được nhấn
     load_clicked = pyqtSignal(str) # Gửi nội dung input
     reset_clicked = pyqtSignal()
-    solve_clicked = pyqtSignal(str) # Gửi key thuật toán được chọn
+    solve_clicked = pyqtSignal(str, str) # Gửi key thuật toán và key heuristic (nếu có)
     random_start_clicked = pyqtSignal()
+
+    # Heuristics for local search (not directly used in ControlPanel, but good for reference)
+    # Actual map is in LocalSearchConfigPanel
+    # HEURISTICS = {
+    #     "manhattan": ("Manhattan Distance", manhattan_distance),
+    #     "misplaced": ("Misplaced Tiles", number_of_misplaced_tiles),
+    # }
 
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-        layout.setContentsMargins(10, 10, 10, 10)
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(10)
+        main_layout.setAlignment(Qt.AlignTop)
 
-        # --- Input trạng thái ---
-        input_group = QGroupBox("Puzzle State Input")
-        input_layout = QVBoxLayout()
-
-        # Start state input
-        start_input_layout = QHBoxLayout()
+        # Input cho trạng thái bắt đầu
+        start_state_group = QGroupBox("Initial State")
+        start_state_layout = QVBoxLayout()
         self.start_input = QLineEdit()
-        self.start_input.setPlaceholderText("E.g: 1 2 3 4 0 6 7 5 8 (0 is blank)")
-        self.start_input.setFont(QFont('Arial', 9))
-        self.random_start_btn = QPushButton("Random Start")
-        self.random_start_btn.setToolTip("Generate a random solvable state")
-        start_input_layout.addWidget(QLabel("Start:"))
-        start_input_layout.addWidget(self.start_input)
-        start_input_layout.addWidget(self.random_start_btn)
-
-        input_layout.addLayout(start_input_layout)
-        input_group.setLayout(input_layout)
-
-        # --- Nút điều khiển ---
-        button_group = QGroupBox("Controls")
-        button_layout = QHBoxLayout()
-
-        self.load_btn = QPushButton("Load Input State")
-        self.reset_btn = QPushButton("Reset to Default")
-        self.solve_btn = QPushButton("Solve Puzzle")
-        self.solve_btn.setStyleSheet("QPushButton { background-color: #a8dda8; font-weight: bold; }") # Màu xanh
-
-        button_layout.addWidget(self.load_btn)
-        button_layout.addWidget(self.reset_btn)
-        button_layout.addWidget(self.solve_btn)
-        button_group.setLayout(button_layout)
-
-        # --- Chọn thuật toán ---
-        self.algo_select_panel = AlgorithmSelectionPanel() # Panel chọn thuật toán
-
-        # --- Thống kê kết quả ---
-        stats_group = QGroupBox("Solver Statistics")
-        stats_layout = QVBoxLayout()
-        self.stats_label = QLabel("Ready. Select an algorithm and click Solve.")
-        self.stats_label.setWordWrap(True) # Tự động xuống dòng
-        self.stats_label.setAlignment(Qt.AlignTop)
-        self.stats_label.setMinimumHeight(60) # Chiều cao tối thiểu
-        stats_layout.addWidget(self.stats_label)
-        stats_group.setLayout(stats_layout)
-
-        # --- Thêm vào layout chính ---
-        layout.addWidget(input_group)
-        layout.addWidget(button_group)
-        layout.addWidget(self.algo_select_panel)
-        layout.addWidget(stats_group)
-        layout.addStretch() # Đẩy các widget lên trên
-
-        self.setLayout(layout)
-
-        # --- Kết nối signals nội bộ của control panel ---
+        self.start_input.setPlaceholderText("e.g., 1 2 3 4 0 5 6 7 8")
+        self.load_btn = QPushButton("Load State from Input")
         self.load_btn.clicked.connect(self._on_load_clicked)
-        self.reset_btn.clicked.connect(self._on_reset_clicked)
-        self.solve_btn.clicked.connect(self._on_solve_clicked)
+        self.random_start_btn = QPushButton("Generate Random Start State")
         self.random_start_btn.clicked.connect(self._on_random_start_clicked)
+        self.reset_btn = QPushButton("Reset to Default State")
+        self.reset_btn.clicked.connect(self._on_reset_clicked)
+
+        start_state_layout.addWidget(self.start_input)
+        start_state_layout.addWidget(self.load_btn)
+        start_state_layout.addWidget(self.random_start_btn)
+        start_state_layout.addWidget(self.reset_btn)
+        start_state_group.setLayout(start_state_layout)
+        main_layout.addWidget(start_state_group)
+
+        # Panel chọn thuật toán
+        self.algo_select_panel = AlgorithmSelectionPanel()
+        main_layout.addWidget(self.algo_select_panel)
+
+        # Panel chọn heuristic cho Local Search (mới)
+        self.local_search_config_panel = LocalSearchConfigPanel()
+        main_layout.addWidget(self.local_search_config_panel) # Added to main_layout
+        self.local_search_config_panel.setVisible(False) # Ẩn ban đầu
+
+        # Kết nối signal từ AlgorithmSelectionPanel để ẩn/hiện LocalSearchConfigPanel
+        self.algo_select_panel.algorithm_changed.connect(self._update_local_search_panel_visibility)
+
+        # Nút giải
+        self.solve_btn = QPushButton("Solve Puzzle")
+        self.solve_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; padding: 10px; }")
+        self.solve_btn.clicked.connect(self._on_solve_clicked)
+        main_layout.addWidget(self.solve_btn)
+
+        # Text area cho thống kê (số bước, thời gian, etc.)
+        stats_group = QGroupBox("Statistics")
+        stats_layout = QVBoxLayout()
+        self.stats_display = QTextEdit() # Changed from stats_label
+        self.stats_display.setReadOnly(True)
+        self.stats_display.setMinimumHeight(80)
+        stats_layout.addWidget(self.stats_display)
+        stats_group.setLayout(stats_layout)
+        main_layout.addWidget(stats_group)
+
+        main_layout.addStretch() # Đẩy các widget lên trên
+        self.setLayout(main_layout)
+        self.set_stats_text("Select an algorithm and initial state.")
+
 
     def _on_load_clicked(self):
         self.load_clicked.emit(self.start_input.text())
 
     def _on_reset_clicked(self):
-        self.start_input.clear() # Xóa input field khi reset
-        self.stats_label.setText("Ready. Select an algorithm and click Solve.")
+        self.start_input.clear()
+        self.set_stats_text("States reset. Select an algorithm.")
         self.reset_clicked.emit()
+        # Cập nhật lại visibility của local search panel nếu thuật toán đang chọn là local search
+        self._update_local_search_panel_visibility(self.algo_select_panel.get_selected_algorithm())
+
 
     def _on_solve_clicked(self):
-        selected_algo = self.algo_select_panel.get_selected_algorithm()
-        if selected_algo:
-            self.solve_clicked.emit(selected_algo)
-            self.stats_label.setText(f"Solving with {selected_algo.upper()}...")
+        selected_algo_key = self.algo_select_panel.get_selected_algorithm()
+        if selected_algo_key:
+            heuristic_key = None
+            if self.local_search_config_panel.isVisible(): # Check visibility
+                heuristic_key = self.local_search_config_panel.get_selected_heuristic()
+            self.solve_clicked.emit(selected_algo_key, heuristic_key) # Emit both keys
+            self.set_stats_text(f"Solving with {selected_algo_key.upper()}...") # Use self.set_stats_text
         else:
-             QMessageBox.warning(self, "Algorithm Not Selected", "Please select a solving algorithm.")
+            QMessageBox.warning(self, "Algorithm Not Selected", "Please select a solving algorithm.")
+
 
     def _on_random_start_clicked(self):
-        self.random_start_clicked.emit() # Gửi tín hiệu ra ngoài
+        self.random_start_clicked.emit()
+        # Cập nhật lại visibility của local search panel
+        self._update_local_search_panel_visibility(self.algo_select_panel.get_selected_algorithm())
+
 
     def set_start_input_text(self, text):
-        """Cập nhật nội dung của QLineEdit từ bên ngoài (ví dụ: sau khi random)"""
         self.start_input.setText(text)
 
     def set_stats_text(self, text):
-        """Cập nhật label thống kê"""
-        self.stats_label.setText(text)
+        self.stats_display.setText(text) # Use stats_display
 
     def enable_solve_button(self, enable=True):
-        """Bật/tắt nút Solve"""
         self.solve_btn.setEnabled(enable)
+
+    def _update_local_search_panel_visibility(self, algo_key):
+        """Hiển thị hoặc ẩn LocalSearchConfigPanel dựa trên thuật toán được chọn."""
+        # Danh sách các thuật toán tìm kiếm cục bộ (cần cập nhật nếu key thay đổi)
+        # These should match the keys used in algorithm_manager.py
+        LOCAL_SEARCH_ALGORITHMS = [
+            "hill_climbing", 
+            "random_restart_hc",  # Updated to match key in algorithm_manager.py
+            "simulated_annealing", 
+            "genetic_algorithm"
+        ]
+        if algo_key in LOCAL_SEARCH_ALGORITHMS:
+            self.local_search_config_panel.setVisible(True)
+        else:
+            self.local_search_config_panel.setVisible(False)
 
 
 # --- Algorithm Selection Panel ---
@@ -388,51 +427,88 @@ class AlgorithmSelectionPanel(QGroupBox):
 
     def __init__(self):
         super().__init__("Select Algorithm")
-        layout = QVBoxLayout()
-        layout.setSpacing(5)
+        self.algorithm_radio_buttons = {} # Store radio buttons for later access if needed
+        self.button_group = QButtonGroup(self)
+        
+        main_layout = QVBoxLayout() # Layout chính cho group box
+        
+        algorithm_groups = get_algorithm_groups() # Lấy các nhóm từ manager
+        
+        first_button = None # Để chọn thuật toán đầu tiên làm mặc định
 
-        self.algorithm_groups = get_algorithm_groups() # Lấy cấu trúc nhóm
-        self.algorithm_radio_buttons = {} # Lưu trữ các radio button: key -> QRadioButton
-        self.button_group = QButtonGroup(self) # Quản lý việc chọn 1 nút duy nhất
-        self.selected_algorithm_key = None
+        for group_name, algorithms in algorithm_groups.items():
+            if not algorithms: continue # Bỏ qua nhóm trống
 
-        # Tạo radio button cho từng thuật toán theo nhóm
-        for i, (group_name, algorithms) in enumerate(self.algorithm_groups.items()):
-            group_box = QGroupBox(group_name)
-            group_box.setFont(QFont('Arial', 11, QFont.Bold))
+            group_box_for_radio = QGroupBox(group_name) # Tạo group box nhỏ hơn cho radio buttons của nhóm
             group_layout = QVBoxLayout()
-            group_layout.setSpacing(3)
 
             for algo_key, algo_name in algorithms.items():
-                radio_btn = QRadioButton(algo_name)
-                radio_btn.setObjectName(algo_key) # Lưu key để lấy lại sau
-                radio_btn.setFont(QFont('Arial', 11))
-                self.algorithm_radio_buttons[algo_key] = radio_btn
-                self.button_group.addButton(radio_btn)
-                group_layout.addWidget(radio_btn)
+                # algo_name is now a string, not a dictionary with a "name" key
+                radio_button = QRadioButton(algo_name)
+                radio_button.setProperty("algo_key", algo_key)
+                self.button_group.addButton(radio_button)
+                group_layout.addWidget(radio_button)
+                self.algorithm_radio_buttons[algo_key] = radio_button
+                if first_button is None:
+                    radio_button.setChecked(True)
+                    first_button = radio_button
+            
+            group_box_for_radio.setLayout(group_layout)
+            main_layout.addWidget(group_box_for_radio)
 
-            # Mặc định chọn thuật toán đầu tiên của nhóm đầu tiên
-            if i == 0 and algorithms:
-                first_algo_key = list(algorithms.keys())[0]
-                self.algorithm_radio_buttons[first_algo_key].setChecked(True)
-                self.selected_algorithm_key = first_algo_key
-
-            group_box.setLayout(group_layout)
-            layout.addWidget(group_box)
-
-        # Kết nối sự kiện khi chọn thuật toán
         self.button_group.buttonClicked.connect(self._on_algorithm_selected)
-
-        self.setLayout(layout)
+        self.setLayout(main_layout)
+        
+        # Emit signal cho thuật toán được chọn ban đầu
+        if first_button:
+            self._on_algorithm_selected(first_button)
 
     def _on_algorithm_selected(self, button):
-        """Xử lý khi người dùng chọn thuật toán"""
-        self.selected_algorithm_key = button.objectName()
-        self.algorithm_changed.emit(self.selected_algorithm_key) # Thông báo ra ngoài
+        self.algorithm_changed.emit(button.property("algo_key"))
 
     def get_selected_algorithm(self):
-        """Trả về key của thuật toán đang được chọn"""
-        return self.selected_algorithm_key
+        # Corrected: Method was altered in previous diff
+        return self.button_group.checkedButton().property("algo_key") if self.button_group.checkedButton() else None
+
+
+# --- Local Search Heuristic Selection Panel (Mới) ---
+class LocalSearchConfigPanel(QGroupBox):
+    """Panel chọn heuristic cho các thuật toán Local Search."""
+    heuristic_changed = pyqtSignal(str) # Gửi key của heuristic mới
+
+    HEURISTICS_MAP = {
+        "manhattan": "Manhattan Distance",
+        "misplaced": "Misplaced Tiles"
+    }
+
+    def __init__(self):
+        super().__init__("Local Search Options")
+        self.button_group = QButtonGroup(self)
+        layout = QVBoxLayout()
+
+        first_button = None
+        for key, name in self.HEURISTICS_MAP.items():
+            radio_button = QRadioButton(name)
+            radio_button.setProperty("heuristic_key", key)
+            self.button_group.addButton(radio_button)
+            layout.addWidget(radio_button)
+            if first_button is None: # Chọn heuristic đầu tiên làm mặc định
+                radio_button.setChecked(True)
+                first_button = radio_button
+        
+        self.button_group.buttonClicked.connect(self._on_heuristic_selected)
+        self.setLayout(layout)
+        
+        # Emit signal cho heuristic được chọn ban đầu
+        if first_button:
+           self._on_heuristic_selected(first_button)
+
+
+    def _on_heuristic_selected(self, button):
+        self.heuristic_changed.emit(button.property("heuristic_key"))
+
+    def get_selected_heuristic(self):
+        return self.button_group.checkedButton().property("heuristic_key") if self.button_group.checkedButton() else None
 
 
 # --- Result Panel Widget ---
@@ -479,10 +555,10 @@ class ResultPanel(QWidget):
             "greedy": "Greedy Best-First Search:\n- Expands the node that appears closest to the goal based solely on the heuristic (h-value).\n- Fast but does not guarantee optimality or completeness.\n- Can get stuck in loops or take suboptimal paths.",
             "ids": "Iterative Deepening Search (IDS):\n- Performs DFS with increasing depth limits (0, 1, 2,...).\n- Combines the completeness and optimality of BFS with the memory efficiency of DFS.\n- Can be slower due to re-expanding nodes at shallower depths.",
             "idastar": "Iterative Deepening A* (IDA*):\n- Uses A*'s f-value (g + h) as a cutoff bound that increases iteratively.\n- More memory-efficient than A* for large problems.\n- Guarantees optimality with an admissible heuristic.",
-            "hill_climbing_max": "Hill Climbing (Steepest Ascent):\n- Local search algorithm.\n- Always moves to the neighbor state with the best heuristic value (lowest h).\n- Fast but can easily get stuck in local minima (states better than neighbors but not the global optimum).",
-            "hill_climbing_random": "Hill Climbing (with Random Sidesteps):\n- Similar to steepest ascent Hill Climbing.\n- When stuck (no better neighbors), it allows a limited number of random moves to equal-heuristic neighbors (sidesteps) to potentially escape plateaus.",
-            "simulated_annealing": "Simulated Annealing (SA):\n- Probabilistic local search algorithm inspired by annealing in metallurgy.\n- Allows moves to worse states with a probability that decreases over time (as 'temperature' cools).\n- Helps escape local minima.\n- Does not guarantee optimality; finds a good solution.",
-            "genetic_algorithm": "Genetic Algorithm (GA):\n- Evolutionary algorithm inspired by natural selection.\n- Maintains a population of candidate solutions (states).\n- Uses selection, crossover (recombination), and mutation to evolve the population over generations.\n- Good for large search spaces; finds good solutions but not necessarily the optimal path.",
+            "hill_climbing": "Hill Climbing:\n- Local search algorithm that always moves to the neighbor state with the best heuristic value.\n- Very fast but easily gets stuck in local minima.\n- Can use either Manhattan distance or Misplaced Tiles as heuristic.\n- Does not guarantee an optimal solution.",
+            "random_restart_hc": "Random-Restart Hill Climbing:\n- Runs hill climbing multiple times from different random starting points.\n- Helps overcome the local minima problem of basic hill climbing.\n- More likely to find a good solution, though still not guaranteed to be optimal.\n- Can use either Manhattan distance or Misplaced Tiles as heuristic.",
+            "simulated_annealing": "Simulated Annealing:\n- Probabilistic local search algorithm inspired by annealing in metallurgy.\n- Allows moves to worse states with a probability that decreases over time (as 'temperature' cools).\n- Helps escape local minima.\n- Can use either Manhattan distance or Misplaced Tiles as heuristic.\n- Does not guarantee optimality but often finds good solutions.",
+            "genetic_algorithm": "Genetic Algorithm:\n- Evolutionary algorithm that maintains a population of candidate solutions.\n- Uses selection, crossover, and mutation operators to evolve the population.\n- Selection favors states with better heuristic values.\n- Well-suited for large search spaces.\n- Can use either Manhattan distance or Misplaced Tiles as heuristic.\n- Finds good solutions but not necessarily the optimal path.",
             "belief_bfs": "Belief State BFS (POMDP):\n- Mô hình POMDP (Partially Observable Markov Decision Process).\n- BAN ĐẦU: Chỉ biết 6 ô đầu (hàng 1 và hàng 2), không biết 3 ô cuối (hàng 3).\n- TÌM KIẾM: Duy trì một tập hợp các trạng thái có thể (belief state).\n- QUAN SÁT: Sau mỗi hành động, chỉ quan sát được 6 ô đầu, không biết trạng thái thực tế đầy đủ.\n- NIỀM TIN: Cập nhật tập trạng thái có thể dựa trên hành động và quan sát mới.\n- MỤC TIÊU: Thu hẹp niềm tin xuống còn một trạng thái duy nhất (trạng thái đích).",
             "belief_state_search": (
                 "Belief State Search:\n\n"
