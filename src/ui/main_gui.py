@@ -2,11 +2,12 @@ import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout,
                            QVBoxLayout, QMessageBox, QProgressBar, QLabel,
                            QTabWidget, QPushButton, QGroupBox, QGridLayout,
-                           QLineEdit, QTextEdit)
+                           QLineEdit, QTextEdit, QComboBox, QScrollArea, QSpinBox)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import time
 import traceback
 import itertools
+import random # Added for random selection
 from PyQt5.QtGui import QFont
 
 # Import các thành phần GUI và logic từ các module khác
@@ -34,6 +35,11 @@ class PuzzleWindow(QMainWindow):
         self.uninformed_search_tab = QWidget()
         self.init_uninformed_search_tab()
         self.tab_widget.addTab(self.uninformed_search_tab, "Tìm kiếm trong môi trường không xác định")
+        
+        # Create and add the blind search tab
+        self.blind_search_tab = QWidget()
+        self.init_blind_search_tab()
+        self.tab_widget.addTab(self.blind_search_tab, "Tìm kiếm với Quan sát Mù Hoàn toàn")
         
         # Set the tab widget as the central widget
         self.setCentralWidget(self.tab_widget)
@@ -63,7 +69,8 @@ class PuzzleWindow(QMainWindow):
             # Placeholder for actions specific to the new tab
             print("Switched to Uninformed Search Tab") 
             # You might want to initialize or refresh elements specific to this tab here
-            pass
+        elif current_tab_name == "Tìm kiếm với Quan sát Mù Hoàn toàn":
+            print("Switched to Blind Search Tab")
         pass
 
     def init_normal_tab(self):
@@ -191,6 +198,284 @@ class PuzzleWindow(QMainWindow):
         self.reset_button_uninformed.clicked.connect(self.reset_input_uninformed)
 
         self.load_state_uninformed() # Load initial default state for the 2x2 board
+
+    def init_blind_search_tab(self):
+        """Khởi tạo tab cho tìm kiếm mù hoàn toàn."""
+        layout = QVBoxLayout(self.blind_search_tab)
+        
+        # Header with description
+        description_label = QLabel("Tìm kiếm với Quan sát Mù Hoàn toàn (Không Cảm biến)")
+        description_label.setFont(QFont("Arial", 12, QFont.Bold))
+        description_label.setAlignment(Qt.AlignCenter)
+        description_text = QLabel(
+            "Tìm kiếm mù hoàn toàn cho puzzle 2x2 với 12 trạng thái có thể.\n"
+            "Mỗi hành động sẽ tạo ra tập trạng thái niềm tin mới.")
+        description_text.setAlignment(Qt.AlignCenter)
+        layout.addWidget(description_label)
+        layout.addWidget(description_text)
+        layout.addSpacing(10)
+        
+        # Main content layout: action selection on top, belief states display below
+        content_layout = QHBoxLayout()
+        
+        # Left panel: Controls
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        
+        # Actions group
+        actions_group = QGroupBox("Hành động & Thiết lập") # Renamed group
+        actions_layout = QVBoxLayout(actions_group)
+        
+        # Action selection
+        actions_layout.addWidget(QLabel("Chọn hành động để thực hiện:"))
+        self.action_combo = QComboBox()
+        self.action_combo.addItems(["Chọn hành động", "Di chuyển Phải", "Di chuyển Trái", "Di chuyển Lên", "Di chuyển Xuống"])
+        actions_layout.addWidget(self.action_combo)
+        
+        # Apply action button
+        self.apply_action_button = QPushButton("Áp dụng Hành động")
+        actions_layout.addWidget(self.apply_action_button)
+        actions_layout.addSpacing(10)
+
+        # Belief state initialization
+        actions_layout.addWidget(QLabel("Khởi tạo Tập Niềm tin Ban đầu:"))
+        self.reset_beliefs_button = QPushButton("Khởi tạo (12 Trạng thái)")
+        actions_layout.addWidget(self.reset_beliefs_button)
+
+        # Input for N random states
+        n_states_layout = QHBoxLayout()
+        n_states_layout.addWidget(QLabel("Chọn ngẫu nhiên:"))
+        self.num_random_states_input = QSpinBox()
+        self.num_random_states_input.setRange(1, 12) # Min 1, Max 12 states
+        self.num_random_states_input.setValue(8)    # Default to 8
+        self.num_random_states_input.setFixedWidth(50)
+        n_states_layout.addWidget(self.num_random_states_input)
+        n_states_layout.addWidget(QLabel("trạng thái"))
+        self.initialize_n_random_button = QPushButton("Khởi tạo N")
+        n_states_layout.addWidget(self.initialize_n_random_button)
+        actions_layout.addLayout(n_states_layout)
+        actions_layout.addSpacing(10)
+        
+        # Solution finding
+        actions_layout.addWidget(QLabel("Tìm kiếm Giải pháp:"))
+        self.find_solution_button = QPushButton("Tìm Chuỗi Giải Pháp")
+        actions_layout.addWidget(self.find_solution_button)
+        
+        self.execute_solution_button = QPushButton("Thực hiện Từng Bước")
+        self.execute_solution_button.setEnabled(False)  # Initially disabled
+        actions_layout.addWidget(self.execute_solution_button)
+        
+        left_layout.addWidget(actions_group)
+        
+        # Add current belief state summary
+        belief_summary_group = QGroupBox("Thống kê")
+        belief_summary_layout = QVBoxLayout(belief_summary_group)
+        self.belief_count_label = QLabel("Số lượng trạng thái niềm tin hiện tại: 12")
+        belief_summary_layout.addWidget(self.belief_count_label)
+        
+        self.goal_state_label = QLabel(f"Trạng thái đích: {[[1, 2], [3, 0]]}")
+        belief_summary_layout.addWidget(self.goal_state_label)
+        
+        self.solution_status_label = QLabel("Giải pháp: Chưa tìm thấy")
+        belief_summary_layout.addWidget(self.solution_status_label)
+        
+        left_layout.addWidget(belief_summary_group)
+        
+        left_layout.addStretch()
+        content_layout.addWidget(left_panel, 1) # 1/4 width
+        
+        # Right panel: Belief states display
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        
+        right_layout.addWidget(QLabel("Tập Trạng thái Niềm tin Hiện tại:"))
+        
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        self.belief_states_layout = QGridLayout(scroll_widget)
+        
+        self.belief_states_widgets = []
+        for i in range(12): # Max 12 widgets for display
+            belief_state_widget = PuzzleBoard(title=f"Trạng thái #{i+1}", size=2)
+            self.belief_states_widgets.append(belief_state_widget)
+            row, col = divmod(i, 4)
+            self.belief_states_layout.addWidget(belief_state_widget, row, col)
+        
+        scroll_area.setWidget(scroll_widget)
+        right_layout.addWidget(scroll_area)
+        
+        self.blind_search_log = QTextEdit()
+        self.blind_search_log.setReadOnly(True)
+        self.blind_search_log.setFont(QFont("Courier New", 10))
+        self.blind_search_log.setPlaceholderText("Các hành động và kết quả sẽ được hiển thị ở đây.")
+        self.blind_search_log.setMaximumHeight(150)
+        right_layout.addWidget(QLabel("Nhật ký Hành động:"))
+        right_layout.addWidget(self.blind_search_log)
+        
+        content_layout.addWidget(right_panel, 3)
+        layout.addLayout(content_layout)
+        
+        self.apply_action_button.clicked.connect(self.apply_blind_action)
+        self.reset_beliefs_button.clicked.connect(self.reset_belief_states_to_full)
+        self.initialize_n_random_button.clicked.connect(self.initialize_n_random_belief_states) # New connection
+        self.find_solution_button.clicked.connect(self.find_blind_search_solution)
+        self.execute_solution_button.clicked.connect(self.execute_next_solution_step)
+        
+        self.all_possible_2x2_states = self._generate_all_solvable_2x2_states()
+        self.blind_goal_state = [[1, 2], [3, 0]]
+        self.solution_sequence = []
+        self.current_solution_step = 0
+        
+        self.reset_belief_states_to_full() # Initialize with all 12 states
+
+    def _generate_all_solvable_2x2_states(self):
+        """Tạo tất cả 12 trạng thái 2x2 có thể giải được."""
+        # For 2x2 puzzle, there are 24 possible permutations (4!)
+        # But only 12 are solvable (4!/2)
+        all_states = []
+        
+        # Permutations of [0,1,2,3]
+        base_state = [0, 1, 2, 3]
+        # Get all permutations
+        for perm in itertools.permutations(base_state):
+            # Convert to 2x2 matrix
+            matrix = [list(perm[:2]), list(perm[2:])]
+            
+            # Check if permutation is solvable
+            # For 2x2, a state is solvable if the number of inversions is even
+            # (0 doesn't count in inversions)
+            flat_without_blank = [num for num in perm if num != 0]
+            inversions = 0
+            for i in range(len(flat_without_blank)):
+                for j in range(i+1, len(flat_without_blank)):
+                    if flat_without_blank[i] > flat_without_blank[j]:
+                        inversions += 1
+            
+            if inversions % 2 == 0:  # Solvable if even number of inversions
+                all_states.append(matrix)
+        
+        return all_states[:12]  # Should be exactly 12 states
+
+    def update_belief_state_display(self):
+        """Cập nhật hiển thị các trạng thái niềm tin."""
+        count = len(self.current_belief_states)
+        self.belief_count_label.setText(f"Số lượng trạng thái niềm tin hiện tại: {count}")
+        
+        for i in range(len(self.belief_states_widgets)):
+            if i < count:
+                self.belief_states_widgets[i].setVisible(True)
+                self.belief_states_widgets[i].update_board(self.current_belief_states[i])
+                self.belief_states_widgets[i].set_title(f"Trạng thái #{i+1}")
+            else:
+                self.belief_states_widgets[i].setVisible(False)
+
+    def apply_blind_action(self):
+        """Áp dụng hành động được chọn lên tập trạng thái niềm tin hiện tại."""
+        action = self.action_combo.currentText()
+        if action == "Chọn hành động":
+            QMessageBox.warning(self, "Lỗi", "Vui lòng chọn một hành động để thực hiện.")
+            return
+        
+        # Map action to direction
+        direction_map = {
+            "Di chuyển Phải": "Phải",
+            "Di chuyển Trái": "Trái", 
+            "Di chuyển Lên": "Lên",
+            "Di chuyển Xuống": "Xuống"
+        }
+        direction = direction_map[action]
+        
+        # Apply the action to each state in current belief state
+        new_belief_states = []
+        for state in self.current_belief_states:
+            # Find blank position
+            blank_pos = None
+            for r in range(2):
+                for c in range(2):
+                    if state[r][c] == 0:
+                        blank_pos = (r, c)
+                        break
+                if blank_pos:
+                    break
+            
+            # Calculate new position based on direction
+            dr, dc = 0, 0
+            if direction == "Phải":
+                dc = 1  # Blank moves right
+            elif direction == "Trái":
+                dc = -1  # Blank moves left
+            elif direction == "Lên":
+                dr = -1  # Blank moves up
+            elif direction == "Xuống":
+                dr = 1  # Blank moves down
+            
+            new_blank_r, new_blank_c = blank_pos[0] + dr, blank_pos[1] + dc
+            
+            # Check if new position is valid
+            if 0 <= new_blank_r < 2 and 0 <= new_blank_c < 2:
+                # Create new state with moved tile
+                new_state = [row[:] for row in state]  # Deep copy
+                new_state[blank_pos[0]][blank_pos[1]] = new_state[new_blank_r][new_blank_c]
+                new_state[new_blank_r][new_blank_c] = 0
+                new_belief_states.append(new_state)
+        
+        # Update current belief states
+        if new_belief_states:
+            self.current_belief_states = new_belief_states
+            self.update_belief_state_display()
+            self.log_to_blind_search(f"Áp dụng hành động '{action}': Tập niềm tin mới gồm {len(new_belief_states)} trạng thái.")
+        else:
+            self.log_to_blind_search(f"Không thể áp dụng hành động '{action}' cho bất kỳ trạng thái nào trong tập niềm tin hiện tại.")
+
+    def reset_belief_states_to_full(self):
+        """Khởi tạo lại tập niềm tin về ban đầu với 12 trạng thái."""
+        self.current_belief_states = [list(row) for row in self.all_possible_2x2_states]
+        self.update_belief_state_display()
+        self.log_to_blind_search("Đã khởi tạo lại tập niềm tin về 12 trạng thái ban đầu.")
+        self._reset_solution_related_ui()
+        self.num_random_states_input.setValue(len(self.all_possible_2x2_states) if self.all_possible_2x2_states else 8) # Reset spinbox
+
+    def initialize_n_random_belief_states(self):
+        """Chọn ngẫu nhiên N trạng thái ban đầu từ QSpinBox."""
+        num_to_select = self.num_random_states_input.value()
+
+        if not self.all_possible_2x2_states or len(self.all_possible_2x2_states) == 0:
+            QMessageBox.warning(self, "Lỗi", "Không có trạng thái gốc nào được tạo.")
+            self.log_to_blind_search("Lỗi: Danh sách trạng thái gốc trống rỗng.")
+            return
+
+        if num_to_select < 1 or num_to_select > len(self.all_possible_2x2_states):
+            QMessageBox.warning(self, "Số lượng không hợp lệ", 
+                                f"Vui lòng chọn số lượng từ 1 đến {len(self.all_possible_2x2_states)}.\n")
+            self.log_to_blind_search(f"Lỗi: Số lượng chọn ({num_to_select}) không hợp lệ.")
+            return
+
+        selected_states_tuples = random.sample(self.all_possible_2x2_states, num_to_select)
+        self.current_belief_states = [list(row) for row in selected_states_tuples]
+        
+        self.update_belief_state_display()
+        self.log_to_blind_search(f"Đã chọn ngẫu nhiên {num_to_select} trạng thái làm tập niềm tin ban đầu.")
+        self._reset_solution_related_ui()
+
+    def _reset_solution_related_ui(self):
+        """Helper to reset UI elements related to solution finding/execution."""
+        self.solution_sequence = []
+        self.current_solution_step = 0
+        self.solution_status_label.setText("Giải pháp: Chưa tìm thấy")
+        self.execute_solution_button.setText("Thực hiện Từng Bước")
+        self.execute_solution_button.setEnabled(False)
+        self.find_solution_button.setEnabled(True)
+        self.action_combo.setCurrentIndex(0)
+        self._initial_belief_state_for_current_solution = None # Clear stored initial state
+
+    def log_to_blind_search(self, message):
+        """Ghi log vào vùng nhật ký của tab tìm kiếm mù."""
+        self.blind_search_log.append(f"[{time.strftime('%H:%M:%S')}] {message}")
+        # Scroll to bottom
+        self.blind_search_log.verticalScrollBar().setValue(
+            self.blind_search_log.verticalScrollBar().maximum()
+        )
 
     def _parse_2x2_input(self, input_text):
         """Parses a 4-number string into a 2x2 list of lists."""
@@ -477,6 +762,166 @@ class PuzzleWindow(QMainWindow):
         """Cập nhật mô tả thuật toán trong ResultPanel khi algo được chọn"""
         if algo_key:
             self.result_panel.update_algorithm_description(algo_key)
+
+    def find_blind_search_solution(self):
+        """Tìm chuỗi giải pháp cho tìm kiếm mù hoàn toàn."""
+        self.log_to_blind_search("Đang tìm chuỗi giải pháp...")
+        self.find_solution_button.setEnabled(False)
+        self.solution_status_label.setText("Giải pháp: Đang tìm...")
+        QApplication.processEvents()  # Update UI
+        
+        if not self.current_belief_states:
+            self.log_to_blind_search("Lỗi: Tập trạng thái niềm tin ban đầu trống rỗng. Không thể tìm giải pháp.")
+            self.solution_status_label.setText("Giải pháp: Lỗi (tập rỗng)")
+            self.find_solution_button.setEnabled(True)
+            return
+            
+        # Store the initial belief state from which the solution is found
+        # This is important so that execute_next_solution_step starts correctly.
+        # We will reset current_belief_states to this before starting execution if needed,
+        # or ensure execute_next_solution_step uses a copy.
+        # For now, we rely on the user not changing the belief state between find and execute.
+        # The _reset_solution_related_ui method already handles resetting action_combo and current_solution_step.
+
+        goal_state_as_tuple = tuple(map(tuple, self.blind_goal_state))
+        belief_states_as_tuples = [tuple(map(tuple, state)) for state in self.current_belief_states]
+        initial_belief_state_fs_for_search = frozenset(belief_states_as_tuples)
+        
+        visited = {}
+        # Store the initial belief state for this search instance
+        # This is used to reset the display if the user wants to re-run the found solution
+        self._initial_belief_state_for_current_solution = [list(row) for row in self.current_belief_states]
+
+        queue = [(initial_belief_state_fs_for_search, [])] 
+        
+        solution_found = False
+        final_belief_state_at_solution = None # To store the belief state when solution is found
+        
+        while queue and not solution_found:
+            current_belief_state_fs, actions = queue.pop(0)
+            
+            if current_belief_state_fs in visited:
+                continue
+            
+            visited[current_belief_state_fs] = actions
+            
+            if len(current_belief_state_fs) == 1 and goal_state_as_tuple in current_belief_state_fs:
+                self.solution_sequence = actions
+                solution_found = True
+                final_belief_state_at_solution = current_belief_state_fs
+                # DO NOT update self.current_belief_states here.
+                # self.current_belief_states should remain what it was when "Find Solution" was clicked.
+                # The display of current_belief_states should not change at this point.
+                break
+            
+            for direction, action_text in [
+                ("Phải", "Di chuyển Phải"), 
+                ("Trái", "Di chuyển Trái"), 
+                ("Lên", "Di chuyển Lên"), 
+                ("Xuống", "Di chuyển Xuống")
+            ]:
+                next_belief_state_fs = self._apply_action_to_belief_state(current_belief_state_fs, direction)
+                
+                if next_belief_state_fs and next_belief_state_fs not in visited:
+                    queue.append((next_belief_state_fs, actions + [action_text]))
+        
+        if solution_found:
+            num_steps = len(self.solution_sequence)
+            self.solution_status_label.setText(f"Giải pháp: Tìm thấy ({num_steps} bước)")
+            self.execute_solution_button.setEnabled(True if num_steps > 0 else False)
+            self.current_solution_step = 0 # Reset step counter for execution
+            if num_steps > 0:
+                solution_text = ", ".join(self.solution_sequence)
+                self.log_to_blind_search(f"Tìm thấy giải pháp: {solution_text}")
+                self.execute_solution_button.setText(f"Bước Tiếp Theo ({num_steps} còn lại)")
+            else:
+                self.log_to_blind_search("Tìm thấy giải pháp: Trạng thái ban đầu đã là đích (0 bước).")
+                self.execute_solution_button.setText("Thực hiện Từng Bước")
+        else:
+            self.solution_status_label.setText("Giải pháp: Không tìm thấy")
+            self.log_to_blind_search("Không tìm thấy giải pháp.")
+            self.execute_solution_button.setEnabled(False)
+            self._initial_belief_state_for_current_solution = None # No solution, no specific initial state
+        
+        self.find_solution_button.setEnabled(True)
+
+    def _apply_action_to_belief_state(self, belief_state, direction):
+        """Áp dụng hành động cho tập trạng thái niềm tin và trả về tập mới."""
+        # Convert belief state from frozenset of tuples to list of lists for processing
+        belief_state_as_list = [[list(row) for row in state] for state in belief_state]
+        
+        # Apply action to each state
+        new_belief_states = []
+        for state in belief_state_as_list:
+            # Find blank position
+            blank_pos = None
+            for r in range(2):
+                for c in range(2):
+                    if state[r][c] == 0:
+                        blank_pos = (r, c)
+                        break
+                if blank_pos:
+                    break
+            
+            # Calculate new position based on direction
+            dr, dc = 0, 0
+            if direction == "Phải":
+                dc = 1  # Blank moves right
+            elif direction == "Trái":
+                dc = -1  # Blank moves left
+            elif direction == "Lên":
+                dr = -1  # Blank moves up
+            elif direction == "Xuống":
+                dr = 1  # Blank moves down
+            
+            new_blank_r, new_blank_c = blank_pos[0] + dr, blank_pos[1] + dc
+            
+            # Check if new position is valid
+            if 0 <= new_blank_r < 2 and 0 <= new_blank_c < 2:
+                # Create new state with moved tile
+                new_state = [row[:] for row in state]  # Deep copy
+                new_state[blank_pos[0]][blank_pos[1]] = new_state[new_blank_r][new_blank_c]
+                new_state[new_blank_r][new_blank_c] = 0
+                new_belief_states.append(new_state)
+        
+        if new_belief_states:
+            # Convert back to frozenset of tuples for hashability
+            return frozenset(tuple(map(tuple, state)) for state in new_belief_states)
+        return None
+    
+    def execute_next_solution_step(self):
+        """Thực hiện bước tiếp theo trong chuỗi giải pháp."""
+        if self.current_solution_step == 0 and hasattr(self, '_initial_belief_state_for_current_solution') and self._initial_belief_state_for_current_solution:
+            # If this is the first step of execution, reset current_belief_states to what it was when the solution was found.
+            self.current_belief_states = [list(row) for row in self._initial_belief_state_for_current_solution]
+            self.update_belief_state_display()
+            self.log_to_blind_search("Bắt đầu thực hiện giải pháp từ trạng thái niềm tin ban đầu (khi tìm giải pháp). ")
+
+        if not self.solution_sequence or self.current_solution_step >= len(self.solution_sequence):
+            self.log_to_blind_search("Đã thực hiện hết các bước trong giải pháp hoặc không có giải pháp.")
+            self.execute_solution_button.setEnabled(False)
+            self.execute_solution_button.setText("Thực hiện Từng Bước")
+            # self._initial_belief_state_for_current_solution = None # Clear after full execution
+            return
+            
+        action = self.solution_sequence[self.current_solution_step]
+        
+        # Log before applying, so it's clear which action is for current display state
+        self.log_to_blind_search(f"Bước {self.current_solution_step + 1}/{len(self.solution_sequence)}: Áp dụng hành động '{action}'")
+        
+        self.action_combo.setCurrentText(action) # Visually select in combo
+        self.apply_blind_action() # This will update current_belief_states and log its own message
+        
+        self.current_solution_step += 1 # Increment after applying
+        
+        remaining = len(self.solution_sequence) - self.current_solution_step
+        if remaining > 0:
+            self.execute_solution_button.setText(f"Bước Tiếp Theo ({remaining} còn lại)")
+        else:
+            self.execute_solution_button.setText("Thực hiện Từng Bước")
+            self.execute_solution_button.setEnabled(False)
+            self.log_to_blind_search("Đã thực hiện hết các bước giải pháp.")
+            # self._initial_belief_state_for_current_solution = None # Clear after full execution
 
 if __name__ == '__main__':
     # Bắt buộc dùng QApplication
