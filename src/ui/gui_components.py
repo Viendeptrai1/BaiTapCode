@@ -161,6 +161,9 @@ class SolutionNavigationPanel(QWidget):
         layout = QVBoxLayout()
         layout.setSpacing(5)
 
+        # Kích thước bảng, mặc định là 3x3
+        self.board_size = 3  # Thêm thuộc tính size cho bảng
+        
         # Title
         title_label = QLabel("Solution Navigator")
         title_label.setAlignment(Qt.AlignCenter)
@@ -221,6 +224,11 @@ class SolutionNavigationPanel(QWidget):
         self.initial_state_data = initial_state_data
         self.solution_path = solution_path if solution_path else []
         self.current_step_index = 0 # Bắt đầu từ trạng thái ban đầu
+        
+        # Cập nhật kích thước bảng dựa vào initial_state_data
+        if initial_state_data:
+            self.board_size = len(initial_state_data)
+            
         self.update_display()
         self.update_navigation_state()
         # Gửi tín hiệu về trạng thái ban đầu
@@ -244,7 +252,7 @@ class SolutionNavigationPanel(QWidget):
         """Display the current step board and move description"""
         if self.current_step_index == -1 or self.initial_state_data is None:
             # Trạng thái chưa load hoặc không hợp lệ
-            self.current_step_board.update_board([[0]*self.size]*self.size) # Bảng trống
+            self.current_step_board.update_board([[0]*self.board_size for _ in range(self.board_size)]) # Bảng trống
             self.move_desc.setText("Load a solution to navigate")
             return
 

@@ -9,7 +9,7 @@ import copy # Potentially useful, but direct manipulation might be cleaner
 
 FAILURE = None
 EMPTY_PLAN = [] # Represents an empty plan (e.g., when goal is reached)
-DEBUG_AND_OR_SEARCH = True # Set to True to enable verbose logging
+# DEBUG_AND_OR_SEARCH = True # Set to True to enable verbose logging
 
 class NonDeterministicPuzzle:
     """
@@ -48,6 +48,11 @@ class NonDeterministicPuzzle:
         if 0 not in goal_tiles:
             raise ValueError("Goal state must contain a blank tile (0).")
 
+        self.log_func = lambda x: None # Default no-op logger
+
+    def set_logger(self, logger_func):
+        """Sets a custom logging function."""
+        self.log_func = logger_func if callable(logger_func) else lambda x: None
 
     def _find_blank(self, state_tuple):
         """Finds the (row, col) of the blank tile (0) in a state."""
@@ -78,16 +83,49 @@ class NonDeterministicPuzzle:
                 possible_actions.append((tr, tc)) 
         return possible_actions
 
+    def _get_direction_name(self, action_pos, blank_pos):
+        """Trả về tên hướng di chuyển của ô trống dựa trên vị trí của ô được di chuyển.
+        
+        Args:
+            action_pos: Tọa độ (r,c) của ô được di chuyển
+            blank_pos: Tọa độ (r,c) của ô trống
+        
+        Returns:
+            String: "Phải", "Trái", "Lên", "Xuống" hoặc "(không xác định)"
+        """
+        tr, tc = action_pos  # Ô được di chuyển
+        br, bc = blank_pos  # Ô trống
+        
+        # Xác định hướng di chuyển của ô trống
+        if tr == br:  # Cùng hàng, di chuyển ngang
+            if tc < bc:  # Ô được di chuyển nằm bên trái ô trống
+                return "Trái"  # Ô trống di chuyển sang trái
+            else:  # Ô được di chuyển nằm bên phải ô trống
+                return "Phải"  # Ô trống di chuyển sang phải
+        elif tc == bc:  # Cùng cột, di chuyển dọc
+            if tr < br:  # Ô được di chuyển nằm phía trên ô trống
+                return "Lên"  # Ô trống di chuyển lên trên
+            else:  # Ô được di chuyển nằm phía dưới ô trống
+                return "Xuống"  # Ô trống di chuyển xuống dưới
+        
+        return "(không xác định)"  # Trường hợp không xác định được
+    
+    def _action_to_string(self, action_pos, state_tuple):
+        """Chuyển đổi hành động từ tọa độ sang chuỗi mô tả hướng di chuyển."""
+        blank_pos = self._find_blank(state_tuple)
+        direction = self._get_direction_name(action_pos, blank_pos)
+        tile_value = state_tuple[action_pos[0]][action_pos[1]]
+        return f"di chuyển ô {tile_value} {direction}"
+
     def results(self, state_tuple, action_intended_tile_pos):
         """
         Returns a list of possible resulting states (tuple of tuples) 
         for a given intended action.
 
-        MODIFIED FOR "SLIP OPPOSITE DIRECTION OF INTENDED TILE MOVE":
+        MODIFIED FOR "ADJACENT SLIP":
         1. Normal outcome: The intended tile moves into the blank.
-        2. Slip outcome: The intended tile attempts to move in the exact opposite
-           direction from its original position. If this target is out of bounds,
-           the state does not change. The blank is not involved in the slip.
+        2. Slip outcome: Instead of the intended tile, another adjacent tile 
+           to the blank slips into the blank position.
         
         Args:
             state_tuple: The current state of the puzzle.
@@ -97,8 +135,8 @@ class NonDeterministicPuzzle:
         outcomes = []
         current_matrix_list_of_lists = [list(row) for row in state_tuple]
 
-        tr, tc = action_intended_tile_pos # Tile's original row and column
-        br, bc = self._find_blank(state_tuple)   # Blank's row and column
+        tr, tc = action_intended_tile_pos  # Tile's original row and column (intended to move)
+        br, bc = self._find_blank(state_tuple)  # Blank's row and column
 
         # 1. Normal Outcome
         matrix_normal = [row[:] for row in current_matrix_list_of_lists]
@@ -106,147 +144,172 @@ class NonDeterministicPuzzle:
         normal_outcome = tuple(map(tuple, matrix_normal))
         outcomes.append(normal_outcome)
 
-        # 2. Slip Outcome (Tile moves opposite to its intended move direction)
-        slip_outcome = state_tuple # Default to no change if slip is invalid
+        # 2. Adjacent Slip Outcome: Find other tiles adjacent to blank (not the intended one)
+        adjacent_tiles = []
+        for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:  # Four directions
+            adj_r, adj_c = br + dr, bc + dc  # Position adjacent to blank
+            # Check if position is valid and not the intended tile
+            if (0 <= adj_r < self.size and 0 <= adj_c < self.size and 
+                (adj_r, adj_c) != (tr, tc)):
+                adjacent_tiles.append((adj_r, adj_c))
         
-        # Determine intended move vector for the tile (from tile to blank)
-        # dr_intended = br - tr
-        # dc_intended = bc - tc
-        # No, this is not quite right for defining tile's own slip direction.
-        # We need to determine the tile's move relative to itself based on blank's position.
-
-        slip_target_tr, slip_target_tc = -1, -1
-
-        if tr == br: # Tile and blank are in the same row -> horizontal move for tile
-            if tc < bc: # Tile is to the LEFT of Blank, intends to move RIGHT into blank
-                # Slip: Tile attempts to move further LEFT from its original position
-                slip_target_tr, slip_target_tc = tr, tc - 1
-            else: # Tile is to the RIGHT of Blank (tc > bc), intends to move LEFT into blank
-                # Slip: Tile attempts to move further RIGHT from its original position
-                slip_target_tr, slip_target_tc = tr, tc + 1
-        elif tc == bc: # Tile and blank are in the same column -> vertical move for tile
-            if tr < br: # Tile is ABOVE Blank, intends to move DOWN into blank
-                # Slip: Tile attempts to move further UP from its original position
-                slip_target_tr, slip_target_tc = tr - 1, tc
-            else: # Tile is BELOW Blank (tr > br), intends to move UP into blank
-                # Slip: Tile attempts to move further DOWN from its original position
-                slip_target_tr, slip_target_tc = tr + 1, tc
-        # Else: tile and blank are not adjacent (should not happen if action is valid)
-        # This case will result in slip_target_tr, tc remaining -1, defaulting to no change.
-
-        matrix_slip = [row[:] for row in current_matrix_list_of_lists]
-        if 0 <= slip_target_tr < self.size and 0 <= slip_target_tc < self.size:
-            # Valid slip target: Swap intended tile with the tile at the slip target.
-            # The blank's position (br, bc) is NOT affected by this slip.
-            tile_value_to_slip = matrix_slip[tr][tc]
-            value_at_slip_target = matrix_slip[slip_target_tr][slip_target_tc]
+        # Default to no change if no other adjacent tiles (should be rare in 2x2)
+        slip_outcome = state_tuple
+        
+        if adjacent_tiles:
+            # For deterministic testing, choose first available adjacent tile
+            # Could be made random with: random.choice(adjacent_tiles)
+            slip_r, slip_c = adjacent_tiles[0]
             
-            matrix_slip[slip_target_tr][slip_target_tc] = tile_value_to_slip
-            matrix_slip[tr][tc] = value_at_slip_target
+            # Create slip outcome: the other adjacent tile moves into blank
+            matrix_slip = [row[:] for row in current_matrix_list_of_lists]
+            matrix_slip[br][bc], matrix_slip[slip_r][slip_c] = matrix_slip[slip_r][slip_c], matrix_slip[br][bc]
             slip_outcome = tuple(map(tuple, matrix_slip))
+            slip_direction = self._get_direction_name((slip_r, slip_c), (br, bc))
+            slip_tile = state_tuple[slip_r][slip_c]
+            self.log_func(f"    [KẾT QUẢ] Trượt lân cận: Ô {slip_tile} trượt {slip_direction} vào ô trống thay vì ô dự định.")
         else:
-            # Invalid slip target (out of bounds), so slip outcome is no change from original state
-            slip_outcome = state_tuple
-            if DEBUG_AND_OR_SEARCH:
-                print(f"    [RESULTS] Slip for tile at ({tr},{tc}) to ({slip_target_tr},{slip_target_tc}) is out of bounds.")
+            # This should be rare: blank has only one adjacent tile (the intended one)
+            # In this case, we'll use the normal outcome to ensure state change
+            slip_outcome = normal_outcome
+            self.log_func(f"    [KẾT QUẢ] Không có ô lân cận nào khác để trượt. Sử dụng kết quả bình thường.")
 
         outcomes.append(slip_outcome)
 
-        if DEBUG_AND_OR_SEARCH:
-            print(f"    [RESULTS] For action (move tile at {action_intended_tile_pos}) from state {state_tuple}:")
-            print(f"    [RESULTS] Normal outcome: {normal_outcome}")
-            print(f"    [RESULTS] Slip outcome (tile moves opposite): {slip_outcome}")
-            # print(f"    [RESULTS] Final outcomes list: {outcomes}") # Redundant if shown above
+        action_direction = self._get_direction_name(action_intended_tile_pos, (br, bc))
+        action_tile = state_tuple[tr][tc]
+        self.log_func(f"    [KẾT QUẢ] Cho hành động (di chuyển ô {action_tile} {action_direction}) từ trạng thái {state_tuple}:")
+        self.log_func(f"    [KẾT QUẢ] Kết quả thông thường: {normal_outcome}")
+        self.log_func(f"    [KẾT QUẢ] Kết quả trượt lân cận: {slip_outcome}")
 
         return outcomes
 
-def and_or_search(problem):
+def and_or_search(problem, log_func=None, p_slip=0.1):
     """
     Top-level function to start the AND-OR search.
     Args:
         problem: An instance of NonDeterministicPuzzle.
+        log_func: An optional function to handle logging messages.
+        p_slip: Probability of slip outcome (default: 0.1 or 10%)
     Returns:
         A conditional plan or FAILURE (None).
     """
-    return or_search(problem, problem.initial_state, [])
+    if log_func and callable(log_func):
+        problem.set_logger(log_func)
+    else:
+        problem.set_logger(lambda x: None) # Ensure a no-op logger if none provided or invalid
 
-def or_search(problem, state, path):
-    if DEBUG_AND_OR_SEARCH:
-        print(f"[OR] State: {state}, Path: {path}")
+    # Pass log_func to or_search and and_search
+    return or_search(problem, problem.initial_state, [], log_func, p_slip)
+
+def or_search(problem, state, path, log_func, p_slip):
+    log_func(f"[HOẶC] Trạng thái: {state}, Đường đi: {path}")
 
     if problem.is_goal(state):
-        if DEBUG_AND_OR_SEARCH:
-            print(f"[OR] Goal found for state: {state}")
+        log_func(f"[HOẶC] Đã tìm thấy đích cho trạng thái: {state}")
         return EMPTY_PLAN
     
     if state in path: # Cycle detected
-        if DEBUG_AND_OR_SEARCH:
-            print(f"[OR] Cycle detected for state: {state} in path: {path}")
+        log_func(f"[HOẶC] Phát hiện chu trình cho trạng thái: {state} trong đường đi: {path}")
         return FAILURE
     
     current_path_to_children = path + [state]
 
     possible_actions = problem.actions(state)
-    if DEBUG_AND_OR_SEARCH:
-        print(f"[OR] Actions for {state}: {possible_actions}")
+    
+    # Hiển thị hành động dưới dạng hướng thay vì tọa độ
+    action_descriptions = []
+    for action in possible_actions:
+        blank_pos = problem._find_blank(state)
+        direction = problem._get_direction_name(action, blank_pos)
+        tile_value = state[action[0]][action[1]]
+        action_descriptions.append(f"ô {tile_value} {direction}")
+    
+    log_func(f"[HOẶC] Các hành động khả thi cho {state}: {action_descriptions}")
 
     for action in possible_actions:
-        if DEBUG_AND_OR_SEARCH:
-            print(f"[OR] Trying action: {action} from state: {state}")
+        # Lấy mô tả hướng di chuyển cho action
+        blank_pos = problem._find_blank(state)
+        direction = problem._get_direction_name(action, blank_pos)
+        tile_value = state[action[0]][action[1]]
+        action_desc = f"ô {tile_value} {direction}"
+        
+        log_func(f"[HOẶC] Thử hành động: {action_desc} từ trạng thái: {state}")
         
         resulting_states = problem.results(state, action)
-        if DEBUG_AND_OR_SEARCH:
-            print(f"[OR] Results for action {action}: {resulting_states}")
+        log_func(f"[HOẶC] Kết quả cho hành động {action_desc}: {resulting_states}")
         
-        conditional_plan_for_outcomes = and_search(problem, resulting_states, current_path_to_children)
+        conditional_plan_for_outcomes = and_search(problem, resulting_states, current_path_to_children, log_func, p_slip)
         
         if conditional_plan_for_outcomes is not FAILURE:
-            if DEBUG_AND_OR_SEARCH:
-                print(f"[OR] Success! Action {action} from {state} leads to plan: {conditional_plan_for_outcomes}")
+            log_func(f"[HOẶC] Thành công! Hành động {action_desc} từ {state} dẫn đến kế hoạch: {conditional_plan_for_outcomes}")
             return [action, conditional_plan_for_outcomes]
         else:
-            if DEBUG_AND_OR_SEARCH:
-                print(f"[OR] Action {action} from {state} failed (and_search returned FAILURE).")
+            log_func(f"[HOẶC] Hành động {action_desc} từ {state} thất bại (and_search trả về FAILURE).")
             
-    if DEBUG_AND_OR_SEARCH:
-        print(f"[OR] All actions failed for state: {state}. Returning FAILURE.")
+    log_func(f"[HOẶC] Tất cả hành động thất bại cho trạng thái: {state}. Trả về FAILURE.")
     return FAILURE
 
-def and_search(problem, states_to_achieve, path):
-    if DEBUG_AND_OR_SEARCH:
-        print(f"[AND] States to achieve: {states_to_achieve}, Path: {path}")
+def and_search(problem, states_to_achieve, path, log_func, p_slip):
+    log_func(f"[VÀ] Các trạng thái cần đạt: {states_to_achieve}, Đường đi: {path}")
 
     outcome_to_plan_map = {}
 
     if not states_to_achieve:
-        if DEBUG_AND_OR_SEARCH:
-            print("[AND] No states to achieve. This might be an issue.")
+        log_func("[VÀ] Không có trạng thái nào cần đạt. Đây có thể là vấn đề.")
         # Depending on semantics, this could be an empty plan or failure.
         # For AND-OR, if an action has no outcomes, it might be considered unplannable.
         return FAILURE # Or an empty map {} if that's more appropriate for no outcomes.
 
-    for s_i in states_to_achieve:
-        if DEBUG_AND_OR_SEARCH:
-            print(f"[AND] Processing outcome state s_i: {s_i}")
+    # Determine the primary (normal) outcome - it's the first one in the results list
+    if len(states_to_achieve) > 0:
+        primary_state = states_to_achieve[0]
+        log_func(f"[VÀ] Kết quả chính (bình thường): {primary_state}")
+    else:
+        return FAILURE
+
+    # First, try to find a plan for the primary outcome
+    log_func(f"[VÀ] Xử lý trạng thái kết quả chính: {primary_state}")
+    primary_plan = or_search(problem, primary_state, path, log_func, p_slip)
+    
+    if primary_plan is FAILURE:
+        log_func(f"[VÀ] Thất bại cho kết quả chính. Hủy bỏ nút VÀ.")
+        return FAILURE
+    
+    log_func(f"[VÀ] Tìm thấy kế hoạch cho kết quả chính: {primary_plan}")
+    outcome_to_plan_map[primary_state] = primary_plan
+    
+    # For other outcomes (slip outcomes), we have two options based on probability:
+    # 1. If probability is low (p_slip < threshold), we can use the primary plan
+    # 2. Otherwise, find a specific plan for each outcome
+    
+    for i, s_i in enumerate(states_to_achieve):
+        if i == 0:  # Skip the primary outcome which we already processed
+            continue
+            
+        log_func(f"[VÀ] Xử lý trạng thái kết quả phụ s_i: {s_i}")
         
-        plan_for_s_i = or_search(problem, s_i, path) 
+        # If slip probability is low (< 15%), use the primary plan for this outcome too
+        if p_slip < 0.15:
+            log_func(f"[VÀ] Sử dụng kế hoạch chính cho kết quả xác suất thấp (p={p_slip})")
+            outcome_to_plan_map[s_i] = primary_plan
+        else:
+            # Traditional AND-OR approach: find specific plan for this outcome
+            plan_for_s_i = or_search(problem, s_i, path, log_func, p_slip) 
+            
+            if plan_for_s_i is FAILURE:
+                log_func(f"[VÀ] Thất bại cho s_i: {s_i}. Hủy bỏ nút VÀ.")
+                return FAILURE
+            
+            log_func(f"[VÀ] Tìm thấy kế hoạch cho s_i {s_i}: {plan_for_s_i}")
+            outcome_to_plan_map[s_i] = plan_for_s_i
         
-        if plan_for_s_i is FAILURE:
-            if DEBUG_AND_OR_SEARCH:
-                print(f"[AND] Failure for s_i: {s_i}. Aborting AND node.")
-            return FAILURE
-        
-        if DEBUG_AND_OR_SEARCH:
-            print(f"[AND] Plan found for s_i {s_i}: {plan_for_s_i}")
-        outcome_to_plan_map[s_i] = plan_for_s_i
-        
-    if DEBUG_AND_OR_SEARCH:
-        print(f"[AND] All outcome states achieved. Returning map: {outcome_to_plan_map}")
+    log_func(f"[VÀ] Tất cả trạng thái kết quả đều đạt được. Trả về bản đồ: {outcome_to_plan_map}")
     return outcome_to_plan_map
 
 
 if __name__ == '__main__':
-    DEBUG_AND_OR_SEARCH = True # Enable debugging for standalone run
+    # DEBUG_AND_OR_SEARCH = True # Enable debugging for standalone run
     # Example Usage (for testing purposes)
     # Define a 2x2 puzzle
     # Goal: [[1, 2], [3, 0]] (0 is blank)
@@ -266,8 +329,12 @@ if __name__ == '__main__':
     try:
         puzzle_problem = NonDeterministicPuzzle(initial_matrix=initial_config, goal_matrix=goal_config)
 
+        # Define a logger for testing if needed
+        def console_logger(message):
+            print(message)
+
         print("Starting AND-OR Search...")
-        solution_plan = and_or_search(puzzle_problem)
+        solution_plan = and_or_search(puzzle_problem, console_logger, p_slip=0.1)
 
         if solution_plan is FAILURE:
             print("No solution found.")
@@ -311,7 +378,7 @@ if __name__ == '__main__':
     print("\n--- Test: Initial is Goal ---")
     try:
         puzzle_problem_goal = NonDeterministicPuzzle(initial_matrix=goal_config, goal_matrix=goal_config)
-        solution_plan_goal = and_or_search(puzzle_problem_goal)
+        solution_plan_goal = and_or_search(puzzle_problem_goal, console_logger, p_slip=0.1)
         if solution_plan_goal == EMPTY_PLAN:
             print("Correctly identified: Initial state is already the goal state.")
         else:

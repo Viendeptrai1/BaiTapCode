@@ -190,8 +190,7 @@ class PuzzleWindow(QMainWindow):
         self.solve_button_uninformed.clicked.connect(self.solve_uninformed)
         self.reset_button_uninformed.clicked.connect(self.reset_input_uninformed)
 
-        # Load initial default state for the 2x2 board
-        self.load_state_uninformed() 
+        self.load_state_uninformed() # Load initial default state for the 2x2 board
 
     def _parse_2x2_input(self, input_text):
         """Parses a 4-number string into a 2x2 list of lists."""
@@ -217,6 +216,11 @@ class PuzzleWindow(QMainWindow):
             self.initial_state_board_uninformed.update_board([[0,0],[0,0]]) # Clear board on error
             self.plan_display_area_uninformed.setText("Invalid input. Please enter 4 unique numbers (0-3).")
 
+    def log_to_plan_display(self, message):
+        """Appends a message to the plan display area in the uninformed search tab."""
+        self.plan_display_area_uninformed.append(message)
+        QApplication.processEvents() # Ensure the UI updates with each message
+
     def reset_input_uninformed(self):
         """Resets the input field and clears displays for the uninformed search tab."""
         self.initial_state_input_uninformed.setText("0 1 2 3")
@@ -228,15 +232,19 @@ class PuzzleWindow(QMainWindow):
         """Recursively formats the conditional plan for display in QTextEdit."""
         indent = "  " * indent_level
         if plan == EMPTY_PLAN:
-            return indent + "<GOAL REACHED (Empty Plan)>\n"
+            return indent + "<ĐÃ ĐẠT ĐÍCH (Kế hoạch rỗng)>\n"
         if plan == FAILURE:
-            return indent + "<FAILURE ENCOUNTERED IN SUBPLAN>\n"
+            return indent + "<THẤT BẠI TRONG KẾ HOẠCH CON>\n"
         if not isinstance(plan, list) or len(plan) != 2:
-            return indent + f"<INVALID PLAN STRUCTURE: {plan}>\n"
+            return indent + f"<CẤU TRÚC KẾ HOẠCH KHÔNG HỢP LỆ: {plan}>\n"
 
         action_coord = plan[0] # (row, col) of tile intended to move
         outcomes_map = plan[1]
 
+        # Chuyển đổi tọa độ hành động thành hướng di chuyển
+        current_state_tuple = tuple(map(tuple, current_state_matrix))
+        direction = self._get_direction_from_action(action_coord, current_state_matrix)
+        
         tile_value = "?"
         # Check conditions for safely accessing tile_value
         if current_state_matrix:
@@ -244,15 +252,47 @@ class PuzzleWindow(QMainWindow):
                0 <= action_coord[1] < len(current_state_matrix[0]):
                 tile_value = current_state_matrix[action_coord[0]][action_coord[1]]
         
-        plan_str = indent + f"IF Perform Action (move tile {tile_value} at {action_coord}):\n"
+        plan_str = indent + f"NẾU Thực hiện hành động (di chuyển ô {tile_value} {direction}):\n"
         
         for outcome_state_tuple, sub_plan in outcomes_map.items():
             # Convert outcome_state_tuple (tuple of tuples) to list of lists for display
             outcome_state_list_of_lists = [list(row) for row in outcome_state_tuple]
-            plan_str += indent + "  " + f"IF Outcome is {outcome_state_list_of_lists}:\n"
+            plan_str += indent + "  " + f"NẾU Kết quả là {outcome_state_list_of_lists}:\n"
             # The sub-plan starts from this outcome_state
             plan_str += self._format_plan_for_display(sub_plan, outcome_state_list_of_lists, indent_level + 2)
         return plan_str
+        
+    def _get_direction_from_action(self, action_pos, current_state_matrix):
+        """Xác định hướng di chuyển dựa trên hành động và trạng thái hiện tại."""
+        # Tìm vị trí ô trống
+        blank_pos = None
+        for r in range(len(current_state_matrix)):
+            for c in range(len(current_state_matrix[r])):
+                if current_state_matrix[r][c] == 0:
+                    blank_pos = (r, c)
+                    break
+            if blank_pos:
+                break
+                
+        if not blank_pos:
+            return "(không xác định)"
+            
+        tr, tc = action_pos  # Ô được di chuyển
+        br, bc = blank_pos   # Ô trống
+        
+        # Xác định hướng di chuyển của ô trống
+        if tr == br:  # Cùng hàng, di chuyển ngang
+            if tc < bc:  # Ô được di chuyển nằm bên trái ô trống
+                return "Trái"  # Ô trống di chuyển sang trái
+            else:  # Ô được di chuyển nằm bên phải ô trống
+                return "Phải"  # Ô trống di chuyển sang phải
+        elif tc == bc:  # Cùng cột, di chuyển dọc
+            if tr < br:  # Ô được di chuyển nằm phía trên ô trống
+                return "Lên"  # Ô trống di chuyển lên trên
+            else:  # Ô được di chuyển nằm phía dưới ô trống
+                return "Xuống"  # Ô trống di chuyển xuống dưới
+        
+        return "(không xác định)"
 
     def solve_uninformed(self):
         """Handles the solving process for the AND-OR search."""
@@ -260,11 +300,11 @@ class PuzzleWindow(QMainWindow):
         initial_matrix = self._parse_2x2_input(input_text)
 
         if not initial_matrix:
-            self.plan_display_area_uninformed.setText("Cannot solve: Invalid initial state.")
+            self.plan_display_area_uninformed.setText("Không thể giải: Trạng thái ban đầu không hợp lệ.")
             return
 
         self.initial_state_board_uninformed.update_board(initial_matrix)
-        self.plan_display_area_uninformed.setText("Solving with AND-OR Search...")
+        self.plan_display_area_uninformed.setText("Đang giải với tìm kiếm AND-OR...")
         QApplication.processEvents() # Update UI before long computation
 
         try:
@@ -275,23 +315,24 @@ class PuzzleWindow(QMainWindow):
             # For AND-OR search, we typically don't run it in a separate thread 
             # in this simple example unless it becomes very slow. 
             # If it can be long, a thread like SolverThread would be needed.
-            solution_plan = and_or_search(problem)
+            solution_plan = and_or_search(problem, log_func=self.log_to_plan_display, p_slip=0.1)
 
             if solution_plan == FAILURE:
-                self.plan_display_area_uninformed.setText("No solution found by AND-OR Search.")
+                self.log_to_plan_display("Không tìm thấy giải pháp bằng tìm kiếm AND-OR.")
             elif solution_plan == EMPTY_PLAN:
-                self.plan_display_area_uninformed.setText("Initial state is already the goal state.")
+                self.log_to_plan_display("Trạng thái ban đầu đã là trạng thái đích.")
             else:
                 formatted_plan = self._format_plan_for_display(solution_plan, initial_matrix)
-                self.plan_display_area_uninformed.setText(formatted_plan)
+                self.log_to_plan_display("\n--- Kế Hoạch Có Điều Kiện Cuối Cùng ---")
+                self.log_to_plan_display(formatted_plan)
         
         except ValueError as ve:
-            QMessageBox.critical(self, "Puzzle Setup Error", str(ve))
-            self.plan_display_area_uninformed.setText(f"Error: {str(ve)}")
+            QMessageBox.critical(self, "Lỗi Thiết Lập Puzzle", str(ve))
+            self.plan_display_area_uninformed.setText(f"Lỗi: {str(ve)}")
         except Exception as e:
             import traceback
-            QMessageBox.critical(self, "Solver Error", f"An unexpected error occurred: {str(e)}")
-            self.plan_display_area_uninformed.setText(f"Error: {str(e)}\n{traceback.format_exc()}")
+            QMessageBox.critical(self, "Lỗi Giải Thuật", f"Đã xảy ra lỗi không mong muốn: {str(e)}")
+            self.plan_display_area_uninformed.setText(f"Lỗi: {str(e)}\n{traceback.format_exc()}")
 
     def update_status(self, message, show_progress=False):
         """Cập nhật status bar"""
