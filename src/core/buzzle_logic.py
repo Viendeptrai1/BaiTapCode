@@ -66,6 +66,23 @@ class Buzzle:
                     return (i, j)
         return (-1, -1)  # Should never happen in a valid puzzle
 
+    def get_valid_moves(self):
+        """Return a list of valid moves from the current state."""
+        i, j = self.get_blank_position()
+        valid_moves = []
+        
+        # Check each possible move
+        if i > 0:  # Can move up
+            valid_moves.append("up")
+        if i < 2:  # Can move down
+            valid_moves.append("down")
+        if j > 0:  # Can move left
+            valid_moves.append("left")
+        if j < 2:  # Can move right
+            valid_moves.append("right")
+            
+        return valid_moves
+
 def create_new_state(data, move):
     """Tạo trạng thái mới từ data và move. Trả về (True, new_data) hoặc (False, None)."""
     if not data or not isinstance(data, list) or len(data) != 3:

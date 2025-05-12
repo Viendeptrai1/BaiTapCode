@@ -17,36 +17,41 @@ class SolverThread(QThread):
     solution_ready = pyqtSignal(list, int, int) # path, nodes, fringe/pop_size
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, algorithm_key, start_state, heuristic_key=None): # Added heuristic_key
+    def __init__(self, algorithm_key, start_state, heuristic_key=None, known_positions=None):
         super().__init__()
         self.algorithm_key = algorithm_key
-        self.start_state = start_state # Nhận Buzzle object
+        self.start_state = start_state # Nhận Buzzle object hoặc state_data cho CSP
         self.heuristic_key = heuristic_key # Store heuristic_key
+        self.known_positions = known_positions # Lưu vị trí đã biết cho thuật toán CSP
 
     def run(self):
         try:
-            # Gọi hàm solve_puzzle từ algorithm_manager
+            # Gọi hàm solve_puzzle từ algorithm_manager cho các thuật toán
             result, nodes, fringe_or_pop = solve_puzzle(
                 self.algorithm_key, 
                 self.start_state,
-                heuristic_name=self.heuristic_key # Pass heuristic_key
+                heuristic_name=self.heuristic_key, # Pass heuristic_key
+                known_positions=self.known_positions # Pass known_positions
             )
             
-            # For local search algorithms, result might be a state instead of a path
-            # Convert to a path format for uniform handling
+            # Đối với thuật toán tìm kiếm cục bộ, kết quả có thể là trạng thái thay vì đường đi
+            # Chuyển đổi thành định dạng đường đi để xử lý thống nhất
             if result is None:
-                # No solution found, use empty path
+                # Không tìm thấy giải pháp, sử dụng đường đi rỗng
                 path = []
-            elif not isinstance(result, list):
-                # Create a path with a single step showing the final state
-                path = [("final", result)]
-            else:
+            elif isinstance(result, list) and len(result) > 0 and isinstance(result[0], tuple):
+                # Kết quả đã ở định dạng đường đi [(move, state), ...]
                 path = result
+            else:
+                # Tạo đường đi với một bước duy nhất hiển thị trạng thái cuối cùng
+                # Điều này không nên xảy ra với mã algorithm_manager đã cập nhật
+                print("Cảnh báo: Chuyển đổi định dạng kết quả không mong đợi sang định dạng đường đi")
+                path = [("final", result)]
                 
             self.solution_ready.emit(path, nodes, fringe_or_pop)
         except Exception as e:
             import traceback
-            print(f"Error in SolverThread: {e}")
+            print(f"Lỗi trong SolverThread: {e}")
             traceback.print_exc() # In traceback để debug
             self.error_occurred.emit(f"Lỗi trong quá trình giải: {e}")
 
@@ -165,21 +170,21 @@ class SolutionNavigationPanel(QWidget):
         self.board_size = 3  # Thêm thuộc tính size cho bảng
         
         # Title
-        title_label = QLabel("Solution Navigator")
+        title_label = QLabel("Điều Hướng Giải Pháp")
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setFont(QFont('Arial', 11, QFont.Bold))
 
         # Puzzle display cho bước hiện tại
-        self.current_step_board = PuzzleBoard("Current Step")
+        self.current_step_board = PuzzleBoard("Bước Hiện Tại")
 
         # Step info
-        self.step_info = QLabel("Step 0 / 0")
+        self.step_info = QLabel("Bước 0 / 0")
         self.step_info.setAlignment(Qt.AlignCenter)
 
         # Navigation buttons
         nav_layout = QHBoxLayout()
-        self.prev_btn = QPushButton("<< Previous")
-        self.next_btn = QPushButton("Next >>")
+        self.prev_btn = QPushButton("<< Trước")
+        self.next_btn = QPushButton("Sau >>")
         self.prev_btn.setEnabled(False)
         self.next_btn.setEnabled(False)
         self.prev_btn.setFixedWidth(100)
@@ -191,7 +196,7 @@ class SolutionNavigationPanel(QWidget):
         nav_layout.addStretch()
 
         # Move description
-        self.move_desc = QLabel("Load a solution to navigate")
+        self.move_desc = QLabel("Tải giải pháp để điều hướng")
         self.move_desc.setAlignment(Qt.AlignCenter)
 
         # Add all to main layout
@@ -244,16 +249,16 @@ class SolutionNavigationPanel(QWidget):
         self.next_btn.setEnabled(has_solution and self.current_step_index < total_steps)
 
         if has_solution:
-            self.step_info.setText(f"Step {self.current_step_index} / {total_steps}")
+            self.step_info.setText(f"Bước {self.current_step_index} / {total_steps}")
         else:
-            self.step_info.setText("Step 0 / 0")
+            self.step_info.setText("Bước 0 / 0")
 
     def update_display(self):
         """Display the current step board and move description"""
         if self.current_step_index == -1 or self.initial_state_data is None:
             # Trạng thái chưa load hoặc không hợp lệ
             self.current_step_board.update_board([[0]*self.board_size for _ in range(self.board_size)]) # Bảng trống
-            self.move_desc.setText("Load a solution to navigate")
+            self.move_desc.setText("Tải giải pháp để điều hướng")
             return
 
         current_state_data = None
@@ -262,7 +267,7 @@ class SolutionNavigationPanel(QWidget):
         if self.current_step_index == 0:
             # Hiển thị trạng thái ban đầu
             current_state_data = self.initial_state_data
-            move_text = "Initial State"
+            move_text = "Trạng Thái Ban Đầu"
         elif 0 < self.current_step_index <= len(self.solution_path):
             # Hiển thị bước từ 1 trở đi
             move, state_data = self.solution_path[self.current_step_index - 1]
@@ -274,7 +279,16 @@ class SolutionNavigationPanel(QWidget):
             else:
                 current_state_data = state_data
                 
-            move_text = f"Move: {move.capitalize() if move is not None else 'None'}"
+            # Translate direction if it's one of the standard directions
+            move_translation = {
+                "up": "Lên", 
+                "down": "Xuống", 
+                "left": "Trái", 
+                "right": "Phải",
+                "final": "Cuối cùng"
+            }
+            translated_move = move_translation.get(move.lower() if move else "", move.capitalize() if move else "None")
+            move_text = f"Di chuyển: {translated_move}"
         else:
              # Index không hợp lệ (nên không xảy ra)
              print(f"Error: Invalid step index {self.current_step_index}")
@@ -306,8 +320,8 @@ class SolutionNavigationPanel(QWidget):
         self.current_step_index = -1
         self.update_display()
         self.update_navigation_state()
-        self.move_desc.setText("Load a solution to navigate")
-        self.step_info.setText("Step 0 / 0")
+        self.move_desc.setText("Tải giải pháp để điều hướng")
+        self.step_info.setText("Bước 0 / 0")
 
 
 # --- Control Panel Widget ---
@@ -332,15 +346,15 @@ class ControlPanel(QWidget):
         main_layout.setAlignment(Qt.AlignTop)
 
         # Input cho trạng thái bắt đầu
-        start_state_group = QGroupBox("Initial State")
+        start_state_group = QGroupBox("Trạng Thái Ban Đầu")
         start_state_layout = QVBoxLayout()
         self.start_input = QLineEdit()
-        self.start_input.setPlaceholderText("e.g., 1 2 3 4 0 5 6 7 8")
-        self.load_btn = QPushButton("Load State from Input")
+        self.start_input.setPlaceholderText("ví dụ: 1 2 3 4 0 5 6 7 8")
+        self.load_btn = QPushButton("Tải Trạng Thái Từ Đầu Vào")
         self.load_btn.clicked.connect(self._on_load_clicked)
-        self.random_start_btn = QPushButton("Generate Random Start State")
+        self.random_start_btn = QPushButton("Tạo Trạng Thái Bắt Đầu Ngẫu Nhiên")
         self.random_start_btn.clicked.connect(self._on_random_start_clicked)
-        self.reset_btn = QPushButton("Reset to Default State")
+        self.reset_btn = QPushButton("Đặt Lại Về Trạng Thái Mặc Định")
         self.reset_btn.clicked.connect(self._on_reset_clicked)
 
         start_state_layout.addWidget(self.start_input)
@@ -363,13 +377,13 @@ class ControlPanel(QWidget):
         self.algo_select_panel.algorithm_changed.connect(self._update_local_search_panel_visibility)
 
         # Nút giải
-        self.solve_btn = QPushButton("Solve Puzzle")
+        self.solve_btn = QPushButton("Giải Puzzle")
         self.solve_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; padding: 10px; }")
         self.solve_btn.clicked.connect(self._on_solve_clicked)
         main_layout.addWidget(self.solve_btn)
 
         # Text area cho thống kê (số bước, thời gian, etc.)
-        stats_group = QGroupBox("Statistics")
+        stats_group = QGroupBox("Thống Kê")
         stats_layout = QVBoxLayout()
         self.stats_display = QTextEdit() # Changed from stats_label
         self.stats_display.setReadOnly(True)
@@ -380,7 +394,7 @@ class ControlPanel(QWidget):
 
         main_layout.addStretch() # Đẩy các widget lên trên
         self.setLayout(main_layout)
-        self.set_stats_text("Select an algorithm and initial state.")
+        self.set_stats_text("Chọn thuật toán và trạng thái ban đầu.")
 
 
     def _on_load_clicked(self):
@@ -388,7 +402,7 @@ class ControlPanel(QWidget):
 
     def _on_reset_clicked(self):
         self.start_input.clear()
-        self.set_stats_text("States reset. Select an algorithm.")
+        self.set_stats_text("Đã đặt lại trạng thái. Chọn thuật toán.")
         self.reset_clicked.emit()
         # Cập nhật lại visibility của local search panel nếu thuật toán đang chọn là local search
         self._update_local_search_panel_visibility(self.algo_select_panel.get_selected_algorithm())
@@ -401,9 +415,9 @@ class ControlPanel(QWidget):
             if self.local_search_config_panel.isVisible(): # Check visibility
                 heuristic_key = self.local_search_config_panel.get_selected_heuristic()
             self.solve_clicked.emit(selected_algo_key, heuristic_key) # Emit both keys
-            self.set_stats_text(f"Solving with {selected_algo_key.upper()}...") # Use self.set_stats_text
+            self.set_stats_text(f"Đang giải với {selected_algo_key.upper()}...") # Use self.set_stats_text
         else:
-            QMessageBox.warning(self, "Algorithm Not Selected", "Please select a solving algorithm.")
+            QMessageBox.warning(self, "Chưa Chọn Thuật Toán", "Vui lòng chọn một thuật toán giải.")
 
 
     def _on_random_start_clicked(self):
@@ -443,7 +457,7 @@ class AlgorithmSelectionPanel(QGroupBox):
     algorithm_changed = pyqtSignal(str) # Gửi key của algo mới được chọn
 
     def __init__(self):
-        super().__init__("Select Algorithm")
+        super().__init__("Chọn Thuật Toán")
         self.algorithm_radio_buttons = {} # Store radio buttons for later access if needed
         self.button_group = QButtonGroup(self)
         
@@ -494,12 +508,12 @@ class LocalSearchConfigPanel(QGroupBox):
     heuristic_changed = pyqtSignal(str) # Gửi key của heuristic mới
 
     HEURISTICS_MAP = {
-        "manhattan": "Manhattan Distance",
-        "misplaced": "Misplaced Tiles"
+        "manhattan": "Khoảng Cách Manhattan",
+        "misplaced": "Số Ô Sai Vị Trí"
     }
 
     def __init__(self):
-        super().__init__("Local Search Options")
+        super().__init__("Tùy Chọn Tìm Kiếm Cục Bộ")
         self.button_group = QButtonGroup(self)
         layout = QVBoxLayout()
 
@@ -539,7 +553,7 @@ class ResultPanel(QWidget):
         splitter = QSplitter(Qt.Horizontal)
 
         # Group Box cho Path Display
-        path_group = QGroupBox("Solution Path (Text)")
+        path_group = QGroupBox("Đường Đi Giải Pháp (Văn Bản)")
         path_layout = QVBoxLayout()
         self.path_display = QTextEdit()
         self.path_display.setReadOnly(True)
@@ -548,7 +562,7 @@ class ResultPanel(QWidget):
         path_group.setLayout(path_layout)
 
         # Group Box cho Algorithm Description
-        desc_group = QGroupBox("Algorithm Description")
+        desc_group = QGroupBox("Mô Tả Thuật Toán")
         desc_layout = QVBoxLayout()
         self.algo_desc = QTextEdit()
         self.algo_desc.setReadOnly(True)
@@ -565,49 +579,135 @@ class ResultPanel(QWidget):
 
         # Predefined descriptions
         self.descriptions = {
-            "bfs": "Breadth-First Search (BFS):\n- Explores level by level.\n- Guarantees the shortest path (in terms of number of moves).\n- Can be memory-intensive for large state spaces.",
-            "dfs": "Depth-First Search (DFS):\n- Explores as deeply as possible along each branch before backtracking.\n- Memory efficient.\n- Does not guarantee the shortest path. Often needs a depth limit.",
-            "ucs": "Uniform Cost Search (UCS):\n- Explores nodes based on the lowest path cost (g-value) from the start.\n- Guarantees the cheapest path if step costs are non-negative (here, cost=1 per move, so similar to BFS).\n- Can be memory-intensive.",
-            "astar": "A* Search:\n- Combines path cost (g) and heuristic estimate (h) (f = g + h).\n- Uses Manhattan distance as the heuristic.\n- Guarantees the shortest path if the heuristic is admissible (never overestimates the cost) and consistent.\n- Generally more efficient than BFS/UCS.",
-            "greedy": "Greedy Best-First Search:\n- Expands the node that appears closest to the goal based solely on the heuristic (h-value).\n- Fast but does not guarantee optimality or completeness.\n- Can get stuck in loops or take suboptimal paths.",
-            "ids": "Iterative Deepening Search (IDS):\n- Performs DFS with increasing depth limits (0, 1, 2,...).\n- Combines the completeness and optimality of BFS with the memory efficiency of DFS.\n- Can be slower due to re-expanding nodes at shallower depths.",
-            "idastar": "Iterative Deepening A* (IDA*):\n- Uses A*'s f-value (g + h) as a cutoff bound that increases iteratively.\n- More memory-efficient than A* for large problems.\n- Guarantees optimality with an admissible heuristic.",
-            "hill_climbing": "Hill Climbing:\n- Local search algorithm that always moves to the neighbor state with the best heuristic value.\n- Very fast but easily gets stuck in local minima.\n- Can use either Manhattan distance or Misplaced Tiles as heuristic.\n- Does not guarantee an optimal solution.",
-            "random_restart_hc": "Random-Restart Hill Climbing:\n- Runs hill climbing multiple times from different random starting points.\n- Helps overcome the local minima problem of basic hill climbing.\n- More likely to find a good solution, though still not guaranteed to be optimal.\n- Can use either Manhattan distance or Misplaced Tiles as heuristic.",
-            "simulated_annealing": "Simulated Annealing:\n- Probabilistic local search algorithm inspired by annealing in metallurgy.\n- Allows moves to worse states with a probability that decreases over time (as 'temperature' cools).\n- Helps escape local minima.\n- Can use either Manhattan distance or Misplaced Tiles as heuristic.\n- Does not guarantee optimality but often finds good solutions.",
-            "genetic_algorithm": "Genetic Algorithm:\n- Evolutionary algorithm that maintains a population of candidate solutions.\n- Uses selection, crossover, and mutation operators to evolve the population.\n- Selection favors states with better heuristic values.\n- Well-suited for large search spaces.\n- Can use either Manhattan distance or Misplaced Tiles as heuristic.\n- Finds good solutions but not necessarily the optimal path.",
-            "belief_bfs": "Belief State BFS (POMDP):\n- Mô hình POMDP (Partially Observable Markov Decision Process).\n- BAN ĐẦU: Chỉ biết 6 ô đầu (hàng 1 và hàng 2), không biết 3 ô cuối (hàng 3).\n- TÌM KIẾM: Duy trì một tập hợp các trạng thái có thể (belief state).\n- QUAN SÁT: Sau mỗi hành động, chỉ quan sát được 6 ô đầu, không biết trạng thái thực tế đầy đủ.\n- NIỀM TIN: Cập nhật tập trạng thái có thể dựa trên hành động và quan sát mới.\n- MỤC TIÊU: Thu hẹp niềm tin xuống còn một trạng thái duy nhất (trạng thái đích).",
+            "bfs": "Tìm Kiếm Theo Chiều Rộng (BFS):\n- Khám phá từng lớp một.\n- Đảm bảo đường đi ngắn nhất (về số bước đi).\n- Có thể tốn nhiều bộ nhớ cho không gian trạng thái lớn.",
+            "dfs": "Tìm Kiếm Theo Chiều Sâu (DFS):\n- Khám phá sâu nhất có thể trên mỗi nhánh trước khi quay lui.\n- Tiết kiệm bộ nhớ.\n- Không đảm bảo đường đi ngắn nhất. Thường cần giới hạn độ sâu.",
+            "ucs": "Tìm Kiếm Chi Phí Đồng Nhất (UCS):\n- Khám phá các nút dựa trên chi phí đường đi thấp nhất (giá trị g) từ điểm bắt đầu.\n- Đảm bảo đường đi chi phí thấp nhất nếu chi phí bước đi không âm (ở đây, chi phí=1 cho mỗi bước đi, nên tương tự BFS).\n- Có thể tốn nhiều bộ nhớ.",
+            "astar": "Tìm Kiếm A*:\n- Kết hợp chi phí đường đi (g) và ước lượng heuristic (h) (f = g + h).\n- Sử dụng khoảng cách Manhattan làm heuristic.\n- Đảm bảo đường đi ngắn nhất nếu heuristic tối ưu (không bao giờ ước lượng quá chi phí thực tế) và nhất quán.\n- Thường hiệu quả hơn BFS/UCS.",
+            "greedy": "Tìm Kiếm Tham Lam Best-First:\n- Mở rộng nút có vẻ gần nhất với đích dựa chỉ trên heuristic (giá trị h).\n- Nhanh nhưng không đảm bảo tối ưu hoặc đầy đủ.\n- Có thể bị mắc kẹt trong vòng lặp hoặc đi theo đường không tối ưu.",
+            "ids": "Tìm Kiếm Sâu Dần (IDS):\n- Thực hiện DFS với giới hạn độ sâu tăng dần (0, 1, 2,...).\n- Kết hợp tính đầy đủ và tối ưu của BFS với hiệu quả bộ nhớ của DFS.\n- Có thể chậm hơn do phải mở rộng lại các nút ở độ sâu nông.",
+            "idastar": "IDA* (Iterative Deepening A*):\n- Sử dụng giá trị f của A* (g + h) như một ngưỡng cắt tăng dần.\n- Hiệu quả bộ nhớ hơn A* cho các bài toán lớn.\n- Đảm bảo tối ưu với heuristic tối ưu.",
+            "hill_climbing": "Leo Đồi (Hill Climbing):\n- Thuật toán tìm kiếm cục bộ luôn di chuyển đến trạng thái lân cận có giá trị heuristic tốt nhất.\n- Rất nhanh nhưng dễ bị mắc kẹt tại các cực tiểu cục bộ.\n- Có thể sử dụng khoảng cách Manhattan hoặc Số ô sai vị trí làm heuristic.\n- Không đảm bảo giải pháp tối ưu.",
+            "random_restart_hc": "Leo Đồi Khởi Động Lại Ngẫu Nhiên:\n- Chạy leo đồi nhiều lần từ các điểm bắt đầu ngẫu nhiên khác nhau.\n- Giúp vượt qua vấn đề cực tiểu cục bộ của leo đồi cơ bản.\n- Có nhiều khả năng tìm ra giải pháp tốt, tuy vẫn không đảm bảo tối ưu.\n- Có thể sử dụng khoảng cách Manhattan hoặc Số ô sai vị trí làm heuristic.",
+            "simulated_annealing": "Mô Phỏng Luyện Kim (Simulated Annealing):\n- Thuật toán tìm kiếm cục bộ xác suất lấy cảm hứng từ quá trình luyện kim.\n- Cho phép di chuyển đến trạng thái tệ hơn với xác suất giảm dần theo thời gian (khi 'nhiệt độ' giảm).\n- Giúp thoát khỏi cực tiểu cục bộ.\n- Có thể sử dụng khoảng cách Manhattan hoặc Số ô sai vị trí làm heuristic.\n- Không đảm bảo tối ưu nhưng thường tìm ra giải pháp tốt.",
+            "genetic_algorithm": "Thuật Toán Di Truyền:\n- Thuật toán tiến hóa duy trì một quần thể các giải pháp ứng viên.\n- Sử dụng các toán tử chọn lọc, lai ghép và đột biến để phát triển quần thể.\n- Chọn lọc ưu tiên các trạng thái có giá trị heuristic tốt hơn.\n- Phù hợp cho không gian tìm kiếm lớn.\n- Có thể sử dụng khoảng cách Manhattan hoặc Số ô sai vị trí làm heuristic.\n- Tìm ra giải pháp tốt nhưng không nhất thiết là đường đi tối ưu.",
+            "belief_bfs": "Tìm Kiếm BFS Trạng Thái Niềm Tin (POMDP):\n- Mô hình POMDP (Partially Observable Markov Decision Process).\n- BAN ĐẦU: Chỉ biết 6 ô đầu (hàng 1 và hàng 2), không biết 3 ô cuối (hàng 3).\n- TÌM KIẾM: Duy trì một tập hợp các trạng thái có thể (belief state).\n- QUAN SÁT: Sau mỗi hành động, chỉ quan sát được 6 ô đầu, không biết trạng thái thực tế đầy đủ.\n- NIỀM TIN: Cập nhật tập trạng thái có thể dựa trên hành động và quan sát mới.\n- MỤC TIÊU: Thu hẹp niềm tin xuống còn một trạng thái duy nhất (trạng thái đích).",
             "belief_state_search": (
-                "Belief State Search:\n\n"
-                "- Used in partially observable environments where the agent cannot see the complete state.\n"
-                "- Maintains a 'belief state' - a set of all possible states consistent with observations.\n"
-                "- Observation modes:\n"
-                "  * Partial: Only the first 6 cells (top 2 rows) are visible\n"
-                "  * Blind: No cells are visible\n"
-                "  * Custom: User-defined visibility mask\n\n"
-                "- Search process:\n"
-                "  1. Initialize with all possible states consistent with initial observation\n"
-                "  2. For each action:\n"
-                "     a. Apply the action to each possible state\n"
-                "     b. Make a new observation\n"
-                "     c. Filter states that would not produce this observation\n"
-                "  3. Goal: Reduce belief state to only the goal state\n\n"
-                "- Applications: Robotics, sensor networks, any domain with limited sensing"
+                "Tìm Kiếm Trạng Thái Niềm Tin:\n\n"
+                "- Sử dụng trong môi trường quan sát một phần, nơi tác nhân không thể thấy trạng thái đầy đủ.\n"
+                "- Duy trì 'trạng thái niềm tin' - một tập hợp tất cả trạng thái có thể phù hợp với quan sát.\n"
+                "- Chế độ quan sát:\n"
+                "  * Một phần: Chỉ 6 ô đầu tiên (2 hàng đầu) là có thể nhìn thấy\n"
+                "  * Mù hoàn toàn: Không thể nhìn thấy ô nào\n"
+                "  * Tùy chỉnh: Mặt nạ hiển thị do người dùng xác định\n\n"
+                "- Quá trình tìm kiếm:\n"
+                "  1. Khởi tạo với tất cả trạng thái có thể phù hợp với quan sát ban đầu\n"
+                "  2. Với mỗi hành động:\n"
+                "     a. Áp dụng hành động cho mỗi trạng thái có thể\n"
+                "     b. Tạo quan sát mới\n"
+                "     c. Lọc các trạng thái không tạo ra quan sát này\n"
+                "  3. Mục tiêu: Thu hẹp trạng thái niềm tin xuống chỉ còn trạng thái đích\n\n"
+                "- Ứng dụng: Robot, mạng cảm biến, bất kỳ lĩnh vực nào có khả năng cảm biến hạn chế"
+            ),
+            # Thuật toán CSP
+            "ac3": (
+                "Thuật Toán AC-3 (Arc Consistency Algorithm):\n\n"
+                "- Thuật toán tuyên truyền ràng buộc dựa trên tính chất nhất quán cung (arc consistency).\n"
+                "- Mục tiêu: Thu hẹp miền giá trị của mỗi biến mà không loại bỏ bất kỳ giải pháp nào.\n"
+                "- Cơ chế hoạt động:\n"
+                "  1. Duy trì một hàng đợi các cung (Xi, Xj) cần kiểm tra.\n"
+                "  2. Với mỗi cung, kiểm tra xem mỗi giá trị trong miền của Xi có ít nhất một giá trị tương thích trong miền của Xj không.\n"
+                "  3. Nếu phát hiện một giá trị không tương thích, loại bỏ nó khỏi miền của Xi.\n"
+                "  4. Nếu miền của Xi bị thu hẹp, thêm tất cả các cung (Xk, Xi) vào hàng đợi để kiểm tra lại.\n"
+                "- Ưu điểm: Hiệu quả trong việc loại bỏ sớm các giá trị không khả thi.\n"
+                "- Nhược điểm: Có thể không tìm ra giải pháp duy nhất cho một số vấn đề phức tạp.\n"
+                "- Ứng dụng trong 8-puzzle: Tìm vị trí cho các ô số từ 0-8 sao cho không vi phạm ràng buộc 'tất cả các ô phải ở vị trí khác nhau'."
+            ),
+            "backtracking": (
+                "Thuật Toán Backtracking:\n\n"
+                "- Thuật toán tìm kiếm có hệ thống để tìm tất cả (hoặc một) lời giải thỏa mãn các ràng buộc.\n"
+                "- Cơ chế hoạt động:\n"
+                "  1. Chọn một biến chưa được gán giá trị.\n"
+                "  2. Thử gán các giá trị từ miền của biến đó.\n"
+                "  3. Kiểm tra xem phép gán có vi phạm bất kỳ ràng buộc nào không.\n"
+                "  4. Nếu không vi phạm, đệ quy với các biến còn lại.\n"
+                "  5. Nếu vi phạm hoặc không tìm thấy giải pháp, quay lui và thử giá trị khác.\n"
+                "- Ưu điểm: Đơn giản, đảm bảo tìm thấy giải pháp nếu tồn tại.\n"
+                "- Nhược điểm: Có thể chậm với không gian trạng thái lớn.\n"
+                "- Ứng dụng trong 8-puzzle: Tìm vị trí cho các ô số từ 0-8 dựa trên các ràng buộc vị trí đã biết."
+            ),
+            "backtracking_with_mrv": (
+                "Thuật Toán Backtracking với MRV (Minimum Remaining Values):\n\n"
+                "- Mở rộng của backtracking với heuristic chọn biến thông minh hơn.\n"
+                "- MRV (Minimum Remaining Values):\n"
+                "  * Chọn biến có ít giá trị khả thi nhất trong miền.\n"
+                "  * Giúp phát hiện sớm các đường nhánh không có giải pháp (fail-first).\n"
+                "- Cơ chế hoạt động: Tương tự backtracking cơ bản, nhưng ở bước 1, thay vì chọn biến theo thứ tự cố định, chọn biến có ít giá trị hợp lệ nhất.\n"
+                "- Ưu điểm: Thường hiệu quả hơn backtracking cơ bản, đặc biệt với bài toán lớn.\n"
+                "- Ứng dụng trong 8-puzzle: Ưu tiên chọn các ô có ít vị trí khả thi nhất để gán trước."
+            ),
+            "backtracking_with_mrv_lcv": (
+                "Thuật Toán Backtracking với MRV & LCV:\n\n"
+                "- Kết hợp hai heuristic: MRV (chọn biến) và LCV (chọn giá trị).\n"
+                "- MRV (Minimum Remaining Values):\n"
+                "  * Chọn biến có ít giá trị khả thi nhất trong miền.\n"
+                "- LCV (Least Constraining Value):\n"
+                "  * Chọn giá trị ít gây ràng buộc nhất đối với các biến khác.\n"
+                "  * Ưu tiên giá trị giữ lại nhiều khả năng nhất cho các biến còn lại.\n"
+                "- Cơ chế hoạt động:\n"
+                "  1. Chọn biến với MRV.\n"
+                "  2. Sắp xếp giá trị theo LCV và thử theo thứ tự đó.\n"
+                "  3. Các bước còn lại giống backtracking thông thường.\n"
+                "- Ưu điểm: Thường hiệu quả nhất trong các biến thể backtracking.\n"
+                "- Ứng dụng trong 8-puzzle: Chọn ô có ít vị trí khả thi nhất, và ưu tiên đặt vào vị trí ít ảnh hưởng đến các ô khác nhất."
+            ),
+            # Thuật toán RL
+            "q_learning": (
+                "Q-Learning:\n\n"
+                "- Thuật toán học tăng cường không cần mô hình (model-free).\n"
+                "- Học các giá trị cặp (trạng thái, hành động) thông qua tương tác với môi trường.\n"
+                "- Công thức cập nhật Q:\n"
+                "    Q(s,a) = Q(s,a) + α * [R + γ * max_a' Q(s',a') - Q(s,a)]\n"
+                "  trong đó:\n"
+                "    * α (alpha): Tỷ lệ học tập\n"
+                "    * γ (gamma): Hệ số giảm của phần thưởng tương lai\n"
+                "    * R: Phần thưởng tức thời\n"
+                "    * s, a: Trạng thái và hành động hiện tại\n"
+                "    * s': Trạng thái tiếp theo\n"
+                "    * max_a' Q(s',a'): Giá trị Q tối đa có thể từ trạng thái tiếp theo\n"
+                "- Sử dụng chiến lược epsilon-greedy để cân bằng giữa thăm dò và khai thác.\n"
+                "- Hội tụ đến chính sách tối ưu khi thăm đủ tất cả các cặp (s,a).\n"
+                "- Ứng dụng trong 8-puzzle: Học cách di chuyển từ bất kỳ trạng thái nào để đạt đến trạng thái đích."
+            ),
+            "value_iteration": (
+                "Value Iteration:\n\n"
+                "- Thuật toán quy hoạch động giải bài toán MDP (Markov Decision Process).\n"
+                "- Tính toán hàm giá trị tối ưu U*(s) cho mỗi trạng thái.\n"
+                "- Công thức cập nhật hàm giá trị Bellman:\n"
+                "    U(s) = max_a [R(s,a) + γ * Σ_s' P(s'|s,a) * U(s')]\n"
+                "  trong đó:\n"
+                "    * R(s,a): Phần thưởng trung bình khi thực hiện hành động a tại s\n"
+                "    * γ (gamma): Hệ số giảm của phần thưởng tương lai\n"
+                "    * P(s'|s,a): Xác suất chuyển từ s đến s' khi thực hiện a\n"
+                "    * U(s'): Giá trị hiện tại của trạng thái s'\n"
+                "- Lặp lại quá trình cập nhật cho đến khi hội tụ (thay đổi giá trị nhỏ hơn ngưỡng).\n"
+                "- Trích xuất chính sách π*(s) từ hàm giá trị tối ưu.\n"
+                "- Đảm bảo tìm ra chính sách tối ưu.\n"
+                "- Ứng dụng trong 8-puzzle: Tìm chính sách tối ưu để di chuyển từ bất kỳ trạng thái nào đến trạng thái đích."
             )
         }
 
     def update_path_display(self, initial_state_data, path):
         """Cập nhật hiển thị đường đi text."""
         if not initial_state_data:
-             self.path_display.setText("No initial state loaded.")
+             self.path_display.setText("Chưa tải trạng thái ban đầu.")
              return
 
         # Special handling for backtracking search
         if hasattr(self, 'is_backtracking') and self.is_backtracking:
             node_count = len(path) if path else 0
-            text = "Backtracking Search Process:\n\n"
-            text += f"Total nodes explored: {node_count}\n\n"
-            text += "Initial State:\n"
+            text = "Quá Trình Tìm Kiếm Backtracking:\n\n"
+            text += f"Tổng số nút đã khám phá: {node_count}\n\n"
+            text += "Trạng Thái Ban Đầu:\n"
             for row in initial_state_data:
                 text += f"  {row}\n"
             text += "-" * 30 + "\n\n"
@@ -615,7 +715,7 @@ class ResultPanel(QWidget):
             # Show the backtracking process with variable assignments and backtracks
             if path:
                 # Display a representation of the search tree/process
-                text += "Search Process:\n"
+                text += "Quá Trình Tìm Kiếm:\n"
                 current_depth = 0
                 assignment_history = []
                 
@@ -626,51 +726,68 @@ class ResultPanel(QWidget):
                         indent = "  " * current_depth
                         var_name = f"var{current_depth}" if state else "?"
                         val = f"val{current_depth}" if state else "?"
-                        text += f"{indent}Assign {var_name} = {val}\n"
+                        text += f"{indent}Gán {var_name} = {val}\n"
                         assignment_history.append((var_name, val))
                         
                     elif move == "backtrack":  # Backtracking step
                         if assignment_history:
                             var, val = assignment_history.pop()
-                            text += f"{indent}Backtrack: remove {var} = {val}\n"
+                            text += f"{indent}Quay lui: xóa {var} = {val}\n"
                             current_depth -= 1
                     
                     elif i % 10 == 0:  # Show some states periodically to avoid overwhelming
                         indent = "  " * current_depth
-                        text += f"{indent}Exploring state {i}:\n"
+                        text += f"{indent}Khám phá trạng thái {i}:\n"
                         if state:
                             for row in state:
                                 text += f"{indent}  {row}\n"
                 
                 # Show final solution if available
                 if path and path[-1][1]:
-                    text += "\nFinal Solution Found:\n"
+                    text += "\nĐã Tìm Thấy Giải Pháp:\n"
                     final_state = path[-1][1]
                     for row in final_state:
                         text += f"  {row}\n"
                 else:
-                    text += "\nNo solution found after exploring all possibilities.\n"
+                    text += "\nKhông tìm thấy giải pháp sau khi khám phá tất cả khả năng.\n"
             else:
-                text += "No search process data available."
+                text += "Không có dữ liệu quá trình tìm kiếm."
             
             self.path_display.setText(text)
             return
         
         # Standard display for other algorithms
-        text = "Solution Path:\n\n"
-        text += "Step 0: Initial State\n"
+        text = "Đường Đi Giải Pháp:\n\n"
+        text += "Bước 0: Trạng Thái Ban Đầu\n"
         for row in initial_state_data:
             text += f"  {row}\n"
         text += "-" * 20 + "\n"
 
         if not path:
-            text += "\n(No solution found or algorithm does not provide a path)"
+            text += "\n(Không tìm thấy giải pháp hoặc thuật toán không cung cấp đường đi)"
         else:
-            for i, (move, state) in enumerate(path, 1):
-                text += f"Step {i}: Move {move.capitalize() if move is not None else 'None'}\n"
-                for row in state:
+            # Check if path contains a special format from genetic algorithm
+            if len(path) == 1 and path[0][0] == "final":
+                text += "\nTrạng Thái Cuối Cùng (Thuật Toán Di Truyền hoặc Mô Phỏng Luyện Kim):\n"
+                for row in path[0][1]:
                     text += f"  {row}\n"
-                text += "-" * 20 + "\n"
+                text += "\nLưu ý: Các thuật toán tìm kiếm cục bộ thường chỉ trả về trạng thái cuối cùng,\nkhông phải toàn bộ đường đi từng bước di chuyển.\n"
+            else:
+                # Regular path display for traditional search algorithms
+                for i, (move, state) in enumerate(path, 1):
+                    # Translate direction if it's one of the standard directions
+                    move_translation = {
+                        "up": "Lên", 
+                        "down": "Xuống", 
+                        "left": "Trái", 
+                        "right": "Phải",
+                        "final": "Cuối cùng"
+                    }
+                    translated_move = move_translation.get(move.lower() if move else "", move.capitalize() if move else "None")
+                    text += f"Bước {i}: Di chuyển {translated_move}\n"
+                    for row in state:
+                        text += f"  {row}\n"
+                    text += "-" * 20 + "\n"
 
         self.path_display.setText(text)
         self.path_display.verticalScrollBar().setValue(0) # Cuộn lên đầu
@@ -681,7 +798,7 @@ class ResultPanel(QWidget):
 
     def update_algorithm_description(self, algo_key):
         """Cập nhật mô tả thuật toán dựa trên key."""
-        description = self.descriptions.get(algo_key.lower(), "No description available for this algorithm.")
+        description = self.descriptions.get(algo_key.lower(), "Không có mô tả nào cho thuật toán này.")
         self.algo_desc.setText(description)
         self.algo_desc.verticalScrollBar().setValue(0) # Cuộn lên đầu
 

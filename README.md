@@ -27,12 +27,18 @@
 - Simulated Annealing
 - Genetic Algorithm
 
+### Học tăng cường (Reinforcement Learning)
+- Q-Learning
+- Value Iteration
+
 ## Cấu trúc dự án
 
 ```
 /
 ├── main.py                # Điểm truy cập chính của ứng dụng
+├── make_model.py          # Script huấn luyện và kiểm tra mô hình RL
 ├── requirements.txt       # Các phụ thuộc cần thiết
+├── models/                # Thư mục lưu trữ mô hình đã huấn luyện
 └── src/                   # Thư mục mã nguồn
     ├── __init__.py        # Package mã nguồn
     ├── core/              # Module cho logic cốt lõi
@@ -41,7 +47,8 @@
     ├── algorithms/        # Module cho các thuật toán tìm kiếm
     │   ├── __init__.py
     │   ├── algorithm_manager.py       # Quản lý và cung cấp giao diện chung cho các thuật toán
-    │   └── search_algorithms.py       # Cài đặt các thuật toán tìm kiếm
+    │   ├── search_algorithms.py       # Cài đặt các thuật toán tìm kiếm
+    │   └── rl_algorithms.py           # Cài đặt các thuật toán học tăng cường
     ├── ui/                # Module cho giao diện người dùng
     │   ├── __init__.py
     │   ├── gui_components.py          # Các thành phần giao diện người dùng
@@ -63,6 +70,28 @@ pip install -r requirements.txt
 
 ```bash
 python main.py
+```
+
+## Huấn luyện và sử dụng mô hình RL
+
+Để huấn luyện mô hình học tăng cường:
+
+```bash
+# Huấn luyện mô hình Q-Learning với 3000 episodes
+python make_model.py --train --model q_learning --episodes 3000
+
+# Huấn luyện mô hình Value Iteration với 500 lần lặp
+python make_model.py --train --model value_iteration --iterations 500
+```
+
+Để kiểm tra mô hình trên một trạng thái cụ thể:
+
+```bash
+# Kiểm tra mô hình Q-Learning trên một trạng thái cụ thể
+python make_model.py --test-specific --model q_learning --puzzle '0,1,4,6,5,8,2,3,7' --max-steps 1000
+
+# Kiểm tra mô hình Value Iteration trên một trạng thái cụ thể
+python make_model.py --test-specific --model value_iteration --puzzle '0,1,4,6,5,8,2,3,7' --max-steps 1000
 ```
 
 ## Hướng dẫn sử dụng

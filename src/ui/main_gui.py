@@ -14,13 +14,15 @@ from PyQt5.QtGui import QFont
 from src.core.buzzle_logic import Buzzle, generate_random_solvable_state, is_solvable, parse_puzzle_input
 from .gui_components import (PuzzleBoard, SolutionNavigationPanel, ControlPanel,
                             ResultPanel, SolverThread)
+# Import CSP UI components
+from .csp_gui import CSPConfigPanel
 # Import the new algorithm
 from src.algorithms.and_or_graph_search import NonDeterministicPuzzle, and_or_search, FAILURE, EMPTY_PLAN
 
 class PuzzleWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("8-Puzzle Solver")
+        self.setWindowTitle("Giải Puzzle 8-Ô")
         self.setGeometry(100, 100, 1200, 700)  # Wider to accommodate tabs
         
         # Create tab widget for different solving methods
@@ -29,7 +31,7 @@ class PuzzleWindow(QMainWindow):
         # Create and add the informed search tab
         self.normal_tab = QWidget()
         self.init_normal_tab()
-        self.tab_widget.addTab(self.normal_tab, "Standard Algorithms")
+        self.tab_widget.addTab(self.normal_tab, "Thuật Toán Tiêu Chuẩn")
 
         # Create and add the uninformed search tab
         self.uninformed_search_tab = QWidget()
@@ -40,6 +42,11 @@ class PuzzleWindow(QMainWindow):
         self.blind_search_tab = QWidget()
         self.init_blind_search_tab()
         self.tab_widget.addTab(self.blind_search_tab, "Tìm kiếm với Quan sát Mù Hoàn toàn")
+        
+        # Create and add the CSP tab
+        self.csp_tab = QWidget()
+        self.init_csp_tab()
+        self.tab_widget.addTab(self.csp_tab, "Thỏa mãn Ràng buộc (CSP)")
         
         # Set the tab widget as the central widget
         self.setCentralWidget(self.tab_widget)
@@ -53,7 +60,7 @@ class PuzzleWindow(QMainWindow):
         self.tab_widget.currentChanged.connect(self.on_tab_changed)
         
         # --- Status Bar ---
-        self.status_label = QLabel("Ready")
+        self.status_label = QLabel("Sẵn sàng")
         self.statusBar().addWidget(self.status_label)
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setRange(0, 0)  # Indeterminate
@@ -71,6 +78,8 @@ class PuzzleWindow(QMainWindow):
             # You might want to initialize or refresh elements specific to this tab here
         elif current_tab_name == "Tìm kiếm với Quan sát Mù Hoàn toàn":
             print("Switched to Blind Search Tab")
+        elif current_tab_name == "Thỏa mãn Ràng buộc (CSP)":
+            print("Switched to CSP Tab")
         pass
 
     def init_normal_tab(self):
@@ -86,8 +95,8 @@ class PuzzleWindow(QMainWindow):
         boards_layout = QHBoxLayout(boards_container)
         boards_layout.setSpacing(15)
 
-        self.start_board = PuzzleBoard("Initial State")
-        self.goal_board = PuzzleBoard("Goal State")
+        self.start_board = PuzzleBoard("Trạng Thái Ban Đầu")
+        self.goal_board = PuzzleBoard("Trạng Thái Đích")
         self.solution_navigator = SolutionNavigationPanel()
 
         boards_layout.addWidget(self.start_board, stretch=1)
@@ -136,11 +145,11 @@ class PuzzleWindow(QMainWindow):
         left_panel_layout = QVBoxLayout(left_panel_widget)
 
         # States Group (Initial and Goal Boards)
-        states_group = QGroupBox("Puzzle States (2x2)")
+        states_group = QGroupBox("Trạng Thái Puzzle (2x2)")
         states_group_layout = QHBoxLayout()
         
-        self.initial_state_board_uninformed = PuzzleBoard(title="Initial State", size=2)
-        self.goal_state_board_uninformed = PuzzleBoard(title="Goal State", size=2)
+        self.initial_state_board_uninformed = PuzzleBoard(title="Trạng Thái Ban Đầu", size=2)
+        self.goal_state_board_uninformed = PuzzleBoard(title="Trạng Thái Đích", size=2)
         self.fixed_goal_state_2x2 = [[1, 2], [3, 0]]
         self.goal_state_board_uninformed.update_board(self.fixed_goal_state_2x2)
         self.goal_state_board_uninformed.setEnabled(False) # Goal state is fixed
@@ -150,16 +159,16 @@ class PuzzleWindow(QMainWindow):
         states_group.setLayout(states_group_layout)
 
         # Input and Controls Group
-        controls_group = QGroupBox("Input and Controls")
+        controls_group = QGroupBox("Đầu Vào và Điều Khiển")
         controls_layout = QGridLayout(controls_group) # Using QGridLayout for better alignment
 
-        label_input = QLabel("Initial state (4 numbers, 0 for blank, e.g., 1 0 2 3):")
+        label_input = QLabel("Trạng thái ban đầu (4 số, 0 cho ô trống, ví dụ: 1 0 2 3):")
         self.initial_state_input_uninformed = QLineEdit()
-        self.initial_state_input_uninformed.setPlaceholderText("e.g., 1 0 2 3")
+        self.initial_state_input_uninformed.setPlaceholderText("ví dụ: 1 0 2 3")
         self.initial_state_input_uninformed.setText("0 1 2 3") # Default example
-        self.load_button_uninformed = QPushButton("Load State")
-        self.solve_button_uninformed = QPushButton("Solve (AND-OR Search)")
-        self.reset_button_uninformed = QPushButton("Reset Input")
+        self.load_button_uninformed = QPushButton("Tải Trạng Thái")
+        self.solve_button_uninformed = QPushButton("Giải (Tìm Kiếm AND-OR)")
+        self.reset_button_uninformed = QPushButton("Đặt Lại Đầu Vào")
 
         controls_layout.addWidget(label_input, 0, 0, 1, 2) # Span 2 columns
         controls_layout.addWidget(self.initial_state_input_uninformed, 1, 0, 1, 2) # Span 2 columns
@@ -176,12 +185,12 @@ class PuzzleWindow(QMainWindow):
         right_panel_widget = QWidget()
         right_panel_layout = QVBoxLayout(right_panel_widget)
         
-        plan_display_group = QGroupBox("Conditional Plan")
+        plan_display_group = QGroupBox("Kế Hoạch Có Điều Kiện")
         plan_display_layout = QVBoxLayout(plan_display_group)
         self.plan_display_area_uninformed = QTextEdit()
         self.plan_display_area_uninformed.setReadOnly(True)
         self.plan_display_area_uninformed.setFont(QFont("Courier New", 10))
-        self.plan_display_area_uninformed.setPlaceholderText("Conditional plan will be displayed here.")
+        self.plan_display_area_uninformed.setPlaceholderText("Kế hoạch có điều kiện sẽ được hiển thị tại đây.")
         plan_display_layout.addWidget(self.plan_display_area_uninformed)
         
         right_panel_layout.addWidget(plan_display_group)
@@ -482,12 +491,12 @@ class PuzzleWindow(QMainWindow):
         try:
             numbers = [int(x) for x in input_text.split()]
             if len(numbers) != 4:
-                raise ValueError("Input must contain exactly 4 numbers.")
+                raise ValueError("Đầu vào phải chứa đúng 4 số.")
             if set(numbers) != set(range(4)):
-                raise ValueError("Input must contain numbers 0, 1, 2, 3 exactly once.")
+                raise ValueError("Đầu vào phải chứa các số 0, 1, 2, 3 đúng một lần.")
             return [numbers[0:2], numbers[2:4]]
         except ValueError as e:
-            QMessageBox.warning(self, "Input Error", str(e))
+            QMessageBox.warning(self, "Lỗi Đầu Vào", str(e))
             return None
 
     def load_state_uninformed(self):
@@ -496,10 +505,10 @@ class PuzzleWindow(QMainWindow):
         parsed_matrix = self._parse_2x2_input(input_text)
         if parsed_matrix:
             self.initial_state_board_uninformed.update_board(parsed_matrix)
-            self.plan_display_area_uninformed.setText("State loaded. Click Solve to find a plan.")
+            self.plan_display_area_uninformed.setText("Trạng thái đã tải. Nhấn Giải để tìm kế hoạch.")
         else:
             self.initial_state_board_uninformed.update_board([[0,0],[0,0]]) # Clear board on error
-            self.plan_display_area_uninformed.setText("Invalid input. Please enter 4 unique numbers (0-3).")
+            self.plan_display_area_uninformed.setText("Đầu vào không hợp lệ. Vui lòng nhập 4 số riêng biệt (0-3).")
 
     def log_to_plan_display(self, message):
         """Appends a message to the plan display area in the uninformed search tab."""
@@ -511,7 +520,7 @@ class PuzzleWindow(QMainWindow):
         self.initial_state_input_uninformed.setText("0 1 2 3")
         self.initial_state_board_uninformed.update_board([[0,1],[2,3]])
         self.plan_display_area_uninformed.clear()
-        self.plan_display_area_uninformed.setPlaceholderText("Conditional plan will be displayed here.")
+        self.plan_display_area_uninformed.setPlaceholderText("Kế hoạch có điều kiện sẽ được hiển thị tại đây.")
 
     def _format_plan_for_display(self, plan, current_state_matrix, indent_level=0):
         """Recursively formats the conditional plan for display in QTextEdit."""
@@ -634,7 +643,7 @@ class PuzzleWindow(QMainWindow):
         try:
             numbers = [int(x) for x in input_text.split()]
             if len(numbers) != 9 or set(numbers) != set(range(9)):
-                raise ValueError("Input must contain 9 unique numbers from 0 to 8.")
+                raise ValueError("Đầu vào phải chứa 9 số duy nhất từ 0 đến 8.")
 
             new_data = [numbers[i:i+3] for i in range(0, 9, 3)]
             # Cập nhật trạng thái bắt đầu
@@ -645,11 +654,11 @@ class PuzzleWindow(QMainWindow):
             self.solution_navigator.reset_display() # Reset navigator
             self.result_panel.clear_displays() # Xóa kết quả cũ
             self.update_algorithm_description(self.control_panel.algo_select_panel.get_selected_algorithm()) # Cập nhật lại desc
-            self.control_panel.set_stats_text("Ready. Select algorithm and click Solve.")
-            self.update_status("Start state loaded from input.")
+            self.control_panel.set_stats_text("Sẵn sàng. Chọn thuật toán và nhấn Giải.")
+            self.update_status("Đã tải trạng thái ban đầu từ đầu vào.")
         except ValueError as e:
-            QMessageBox.warning(self, "Input Error", str(e))
-            self.update_status(f"Input Error: {e}", False)
+            QMessageBox.warning(self, "Lỗi Đầu Vào", str(e))
+            self.update_status(f"Lỗi Đầu Vào: {e}", False)
 
     def reset_all(self):
         """Reset về trạng thái mặc định và xóa các hiển thị liên quan"""
@@ -660,7 +669,7 @@ class PuzzleWindow(QMainWindow):
         self.result_panel.clear_displays()
         # Control panel đã tự reset input và stats text qua signal nội bộ
         self.update_algorithm_description(self.control_panel.algo_select_panel.get_selected_algorithm())
-        self.update_status("States reset to default.")
+        self.update_status("Đã đặt lại về trạng thái mặc định.")
 
     def generate_random_start(self):
         """Tạo trạng thái bắt đầu ngẫu nhiên (solvable)"""
@@ -676,13 +685,13 @@ class PuzzleWindow(QMainWindow):
         self.solution_navigator.reset_display()
         self.result_panel.clear_displays()
         self.update_algorithm_description(self.control_panel.algo_select_panel.get_selected_algorithm())
-        self.control_panel.set_stats_text("Ready. Select algorithm and click Solve.")
-        self.update_status("Generated random solvable start state.")
+        self.control_panel.set_stats_text("Sẵn sàng. Chọn thuật toán và nhấn Giải.")
+        self.update_status("Đã tạo trạng thái bắt đầu ngẫu nhiên có thể giải được.")
 
     def start_solving(self, algorithm_key, heuristic_key=None):
         """Bắt đầu quá trình giải bằng thuật toán được chọn"""
         if not self.start_state or not hasattr(self.start_state, 'data'):
-            QMessageBox.warning(self, "Invalid State", "The start state is not valid.")
+            QMessageBox.warning(self, "Trạng Thái Không Hợp Lệ", "Trạng thái ban đầu không hợp lệ.")
             return
             
         self.current_solution_path = [] # Xóa solution cũ
@@ -691,17 +700,17 @@ class PuzzleWindow(QMainWindow):
 
         # Validate that algorithm exists
         if algorithm_key not in self.control_panel.algo_select_panel.algorithm_radio_buttons:
-            QMessageBox.warning(self, "Algorithm Error", f"Unknown algorithm: {algorithm_key}")
+            QMessageBox.warning(self, "Lỗi Thuật Toán", f"Thuật toán không xác định: {algorithm_key}")
             return
             
         algo_name = self.control_panel.algo_select_panel.algorithm_radio_buttons.get(algorithm_key).text()
         
         # Show heuristic in status if used
         if heuristic_key:
-            heuristic_name = self.control_panel.local_search_config_panel.HEURISTICS_MAP.get(heuristic_key, "Unknown")
-            self.update_status(f"Solving with {algo_name} using {heuristic_name}...", True)
+            heuristic_name = self.control_panel.local_search_config_panel.HEURISTICS_MAP.get(heuristic_key, "Không xác định")
+            self.update_status(f"Đang giải với {algo_name} sử dụng {heuristic_name}...", True)
         else:
-            self.update_status(f"Solving with {algo_name}...", True)
+            self.update_status(f"Đang giải với {algo_name}...", True)
             
         self.control_panel.enable_solve_button(False) # Tắt nút Solve
 
@@ -729,29 +738,31 @@ class PuzzleWindow(QMainWindow):
             heuristic_key = self.control_panel.local_search_config_panel.get_selected_heuristic()
             
         if path:
-            stats = f"Solved in {len(path)} steps.\nNodes evaluated/expanded: {nodes}\nMax fringe/population size: {fringe_or_pop}"
-            self.update_status(f"Solution found ({len(path)} steps).", False)
+            stats = f"Đã giải trong {len(path)} bước.\nSố nút đã đánh giá/mở rộng: {nodes}\nKích thước fringe/quần thể tối đa: {fringe_or_pop}"
+            self.update_status(f"Đã tìm thấy giải pháp ({len(path)} bước).", False)
         elif algo_key.lower() in ["genetic_algorithm", "simulated_annealing", "hill_climbing", "random_restart_hc"]:
             # Các thuật toán local search này có thể không tìm thấy goal
-            final_state = self.solution_navigator.current_step_board.tiles
+            # Retrieve current state from solution navigator if available, otherwise use start state
+            final_state = self.solution_navigator.current_step_board.tiles if self.solution_navigator.current_step_index > -1 else self.start_state.data
+            
             heuristic_info = ""
             if heuristic_key:
-                heuristic_name = self.control_panel.local_search_config_panel.HEURISTICS_MAP.get(heuristic_key, "Unknown")
-                heuristic_info = f" using {heuristic_name}"
+                heuristic_name = self.control_panel.local_search_config_panel.HEURISTICS_MAP.get(heuristic_key, "Không xác định")
+                heuristic_info = f" sử dụng {heuristic_name}"
                 
-            stats = f"{algo_key}{heuristic_info} finished.\nGoal state reached: {Buzzle(final_state).is_goal() if self.solution_navigator.current_step_index > -1 else 'N/A'}\nNodes evaluated: {nodes}\nMax neighbors/population: {fringe_or_pop}"
-            self.update_status(f"{algo_key.upper()} finished. Goal not guaranteed.", False)
+            stats = f"{algo_key}{heuristic_info} đã hoàn thành.\nĐạt trạng thái đích: {Buzzle(final_state).is_goal() if isinstance(final_state, list) else 'N/A'}\nSố nút đã đánh giá: {nodes}\nLáng giềng/quần thể tối đa: {fringe_or_pop}"
+            self.update_status(f"{algo_key.upper()} đã hoàn thành. Không đảm bảo đạt đích.", False)
         else:
             # Các thuật toán tìm kiếm khác không tìm thấy đường đi
-            stats = f"No solution found.\nNodes expanded: {nodes}\nMax fringe size: {fringe_or_pop}"
-            self.update_status("No solution found.", False)
+            stats = f"Không tìm thấy giải pháp.\nSố nút đã mở rộng: {nodes}\nKích thước fringe tối đa: {fringe_or_pop}"
+            self.update_status("Không tìm thấy giải pháp.", False)
         self.control_panel.set_stats_text(stats)
 
     def on_solver_error(self, error_msg):
         """Xử lý khi có lỗi trong thread giải"""
-        QMessageBox.critical(self, "Solver Error", error_msg)
-        self.update_status(f"Error during solving: {error_msg}", False)
-        self.control_panel.set_stats_text("Solver error occurred.")
+        QMessageBox.critical(self, "Lỗi Giải", error_msg)
+        self.update_status(f"Lỗi trong quá trình giải: {error_msg}", False)
+        self.control_panel.set_stats_text("Đã xảy ra lỗi khi giải.")
 
     def on_solver_finished(self):
         """Dọn dẹp UI sau khi thread giải kết thúc (thành công hoặc lỗi)"""
@@ -922,6 +933,84 @@ class PuzzleWindow(QMainWindow):
             self.execute_solution_button.setEnabled(False)
             self.log_to_blind_search("Đã thực hiện hết các bước giải pháp.")
             # self._initial_belief_state_for_current_solution = None # Clear after full execution
+
+    def init_csp_tab(self):
+        """Khởi tạo tab cho các thuật toán thỏa mãn ràng buộc (CSP)"""
+        layout = QHBoxLayout(self.csp_tab)
+        
+        # Panel Left: CSP Config & Controls
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        
+        # CSP Config Panel
+        self.csp_config_panel = CSPConfigPanel(parent=left_panel, on_solve_callback=self.start_csp_solving)
+        left_layout.addWidget(self.csp_config_panel)
+        
+        # Panel Right: Current State Display
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        
+        # Container for Puzzles (Current and Solution)
+        boards_container = QWidget()
+        boards_layout = QHBoxLayout(boards_container)
+        
+        # State Display
+        self.csp_current_board = PuzzleBoard("Trạng Thái Hiện Tại")
+        self.csp_solution_board = PuzzleBoard("Trạng Thái Giải Pháp")
+        
+        boards_layout.addWidget(self.csp_current_board)
+        boards_layout.addWidget(self.csp_solution_board)
+        
+        right_layout.addWidget(boards_container)
+        
+        # Add panels to main layout
+        layout.addWidget(left_panel, 1)  # 1/3 of width
+        layout.addWidget(right_panel, 2)  # 2/3 of width
+        
+        # Initialize puzzle boards with empty states
+        empty_state = [[None, None, None], [None, None, None], [None, None, None]]
+        self.csp_current_board.update_board(empty_state)
+        self.csp_solution_board.update_board(empty_state)
+
+    def start_csp_solving(self, algorithm_key, initial_state, known_positions=None):
+        """Bắt đầu quá trình giải bằng thuật toán CSP"""
+        # Hiển thị trạng thái hiện tại (có thể còn trống)
+        self.csp_current_board.update_board(initial_state)
+        self.csp_solution_board.update_board([[None, None, None], [None, None, None], [None, None, None]])  # Reset solution board
+        
+        # Cập nhật status
+        self.status_label.setText(f"Đang giải bằng thuật toán {algorithm_key}...")
+        self.progress_bar.setVisible(True)
+        
+        # Tạo thread để giải
+        self.csp_solver_thread = SolverThread(algorithm_key, initial_state, known_positions=known_positions)
+        self.csp_solver_thread.solution_ready.connect(self.on_csp_solution_ready)
+        self.csp_solver_thread.error_occurred.connect(self.on_solver_error)
+        self.csp_solver_thread.finished.connect(self.on_solver_finished)
+        self.csp_solver_thread.start()
+        
+    def on_csp_solution_ready(self, path, nodes, stats):
+        """Xử lý khi thread giải CSP xong và có kết quả"""
+        # Cập nhật status
+        self.progress_bar.setVisible(False)
+        
+        if path and path[0][0] == "final" and path[0][1]:
+            # Hiển thị giải pháp
+            self.csp_solution_board.update_board(path[0][1])
+            self.status_label.setText(f"Đã tìm thấy giải pháp bằng thuật toán CSP")
+            is_success = True
+        else:
+            # Không tìm thấy giải pháp
+            self.status_label.setText(f"Không tìm thấy giải pháp bằng thuật toán CSP")
+            is_success = False
+            
+        # Chuyển đổi stats thành dict nếu nó là loại khác
+        stats_dict = stats
+        if not isinstance(stats, dict):
+            stats_dict = {'nodes': nodes, 'stats': stats}
+            
+        # Cập nhật thông tin kết quả trong CSP config panel
+        self.csp_config_panel.update_result(is_success, stats_dict)
 
 if __name__ == '__main__':
     # Bắt buộc dùng QApplication
