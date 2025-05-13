@@ -6,6 +6,8 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 - Phân tích hiệu suất của từng thuật toán
 - Xây dựng giao diện trực quan để minh họa quá trình tìm kiếm
 - So sánh ưu nhược điểm của các thuật toán trong bài toán cụ thể
+![So sánh số nút đã khám phá](charts/tongquanhethong.gif)
+![So sánh số nút đã khám phá](charts/thuattoantieuchuan.gif)
 
 ## 2. Nội dung
 
