@@ -18,11 +18,6 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 - **Hàm kế thừa (successor function)**: Các thao tác di chuyển ô trống (lên, xuống, trái, phải)
 - **Lời giải**: Chuỗi các hành động để đi từ trạng thái ban đầu đến trạng thái đích
 
-#### Hình ảnh minh họa các thuật toán
-![Minh họa BFS](charts/output/bfs.gif)
-![Minh họa DFS](charts/output/dfs.gif)
-![Minh họa UCS](charts/output/ucs.gif)
-![Minh họa IDS](charts/output/ids.gif)
 
 #### So sánh hiệu suất
 ![So sánh thời gian thực thi](charts/output/uninformed_time_comparison.png)
@@ -40,12 +35,7 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 - **Hàm heuristic**: Ước lượng chi phí từ trạng thái hiện tại đến trạng thái đích
   - **Manhattan Distance**: Tổng khoảng cách theo chiều ngang và dọc từ vị trí hiện tại của ô đến vị trí đích
   - **Hamming Distance**: Số ô không đúng vị trí
-  - **Linear Conflict**: Manhattan Distance kết hợp với xét các ô xung đột trên cùng hàng/cột
 
-#### Hình ảnh minh họa các thuật toán
-![Minh họa Greedy Best-First Search](charts/output/greedy.gif)
-![Minh họa A*](charts/output/astar.gif)
-![Minh họa IDA*](charts/output/idastar.gif)
 
 #### So sánh hiệu suất
 ![So sánh thời gian thực thi](charts/output/informed_time_comparison.png)
@@ -56,7 +46,7 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 - Greedy Best-First Search nhanh nhưng không đảm bảo tìm ra lời giải tối ưu
 - A* đảm bảo tìm ra lời giải tối ưu nếu hàm heuristic là admissible (không đánh giá quá cao)
 - IDA* kết hợp A* với tìm kiếm theo chiều sâu, giúp giảm bộ nhớ sử dụng
-- Hàm heuristic có ảnh hưởng lớn đến hiệu suất, với Linear Conflict > Manhattan > Hamming
+- Hàm heuristic có ảnh hưởng lớn đến hiệu suất, với Manhattan > Hamming
 
 ### 2.3. Các thuật toán Tìm kiếm địa phương (Local Search)
 
@@ -146,7 +136,7 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 ![Độ phức tạp kế hoạch](charts/output/andor_plan_complexity.png)
 ![Hiệu suất tìm kiếm](charts/output/andor_search_performance.png)
 ![Tỷ lệ thành công](charts/output/andor_success_rate.png)
-![Cấu trúc kế hoạch](charts/output/conditional_plan_structure.png)
+
 ![So sánh với các thuật toán khác](charts/output/andor_comparison.png)
 
 #### Nhận xét
