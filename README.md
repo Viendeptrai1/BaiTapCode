@@ -87,43 +87,7 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 - Simulated Annealing cân bằng giữa khám phá không gian trạng thái và tối ưu hóa
 - Genetic Algorithm có tỷ lệ thành công cao với các bài toán phức tạp nhưng chậm hơn
 
-### 2.4. Các thuật toán giải quyết bài toán ràng buộc (CSP)
-
-#### Thành phần chính
-- **Biến**: Các vị trí trên bảng 8-puzzle
-- **Miền giá trị**: Các giá trị có thể gán cho mỗi vị trí (1-8 và ô trống)
-- **Ràng buộc**: Mỗi hàng, cột chỉ chứa mỗi số một lần; các nước đi hợp lệ
-
-#### Các thuật toán và kỹ thuật chính
-1. **Backtracking**
-   - Gán giá trị cho biến, nếu vi phạm ràng buộc thì quay lui
-   
-2. **Forward Checking**
-   - Loại bỏ các giá trị không hợp lệ từ miền giá trị của các biến chưa gán
-
-3. **Thuật toán AC-3**
-   - Đảm bảo tính nhất quán cung (arc-consistency)
-   
-4. **Heuristics cho việc chọn biến và giá trị**
-   - MRV (Minimum Remaining Values): Chọn biến có ít lựa chọn nhất
-   - Degree heuristic: Chọn biến liên quan đến nhiều biến khác nhất
-   - LCV (Least Constraining Value): Chọn giá trị ít hạn chế các biến khác nhất
-
-#### So sánh hiệu suất
-![Thời gian thực thi](charts/output/csp_time.png)
-![Số lần gán giá trị](charts/output/csp_assignments.png)
-![Số lần quay lui](charts/output/csp_backtracks.png)
-![Thu gọn miền giá trị](charts/output/csp_domain_reduction.png)
-![Khám phá không gian trạng thái](charts/output/csp_space_exploration.png)
-![So sánh tổng quan](charts/output/csp_radar.png)
-
-#### Nhận xét
-- Backtracking đơn thuần không hiệu quả với bài toán 8-puzzle phức tạp
-- Forward Checking giúp cải thiện đáng kể hiệu suất so với Backtracking thuần túy
-- Kết hợp các heuristics MRV, Degree và LCV cho kết quả tốt nhất
-- AC-3 kết hợp với Backtracking giúp giảm đáng kể không gian tìm kiếm
-
-### 2.5. Tìm kiếm trong môi trường phức tạp
+### 2.4. Tìm kiếm trong môi trường phức tạp
 
 #### AND-OR Graph Search
 - Giải quyết bài toán trong môi trường không xác định
@@ -147,7 +111,7 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 - Kế hoạch có điều kiện có khả năng phục hồi cao khi gặp kết quả không mong đợi
 - Chi phí bộ nhớ và thời gian cao hơn các thuật toán thông thường
 
-### 2.6. Các thuật toán Học tăng cường (Reinforcement Learning)
+### 2.5. Các thuật toán Học tăng cường (Reinforcement Learning)
 
 #### Thành phần chính
 - **Trạng thái (S)**: Cấu hình của bảng 8-puzzle
@@ -192,7 +156,6 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 ### 3.1 Hiệu suất
 - **Thuật toán tìm kiếm có thông tin** (A*, IDA*) cho hiệu suất tốt nhất về thời gian và bộ nhớ
 - **Thuật toán học tăng cường** cần thời gian huấn luyện dài nhưng thực thi nhanh sau khi học
-- **CSP với heuristics** hiệu quả trong việc cắt tỉa không gian tìm kiếm
 - **Tìm kiếm địa phương** có thể tìm ra lời giải gần tối ưu với chi phí tính toán thấp
 
 ### 3.2 Áp dụng thực tế
@@ -219,12 +182,6 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 - ✗ Không đảm bảo lời giải tối ưu
 - ✗ Dễ bị mắc kẹt ở cực tiểu cục bộ
 
-**CSP**
-- ✓ Cắt tỉa không gian tìm kiếm hiệu quả
-- ✓ Dễ kết hợp các heuristic
-- ✗ Cài đặt phức tạp hơn
-- ✗ Khó áp dụng cho các bài toán không cấu trúc tốt
-
 **AND-OR Graph Search**
 - ✓ Mạnh mẽ trong môi trường không xác định
 - ✓ Tạo kế hoạch có khả năng phục hồi
@@ -239,7 +196,7 @@ Dự án này tập trung vào việc cài đặt và so sánh hiệu suất c�
 
 ## 4. Kết luận
 
-Qua dự án này, chúng tôi đã:
+Qua dự án này, tôi đã:
 - Cài đặt và so sánh hiệu suất của nhiều thuật toán tìm kiếm khác nhau
 - Phân tích ưu nhược điểm của từng nhóm thuật toán
 - Áp dụng thành công các thuật toán vào bài toán 8-puzzle

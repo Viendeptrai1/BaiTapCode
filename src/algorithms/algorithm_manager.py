@@ -12,14 +12,6 @@ from .local_search_algorithms import (
     number_of_misplaced_tiles, # Import luôn các heuristic nếu cần dùng trực tiếp ở đây
     manhattan_distance
 )
-# Import các thuật toán thỏa mãn ràng buộc CSP
-from .csp_algorithms import (
-    solve_puzzle_with_ac3,
-    solve_puzzle_with_backtracking,
-    state_to_positions,
-    positions_to_state,
-    create_puzzle_state_from_known_positions
-)
 # Import các thuật toán học tăng cường (RL)
 from .rl_algorithms import (
     QLearningAgent,
@@ -56,12 +48,6 @@ def get_algorithm_groups():
             "random_restart_hc": "Leo Đồi Khởi Động Lại", # Key ngắn gọn hơn
             "simulated_annealing": "Mô Phỏng Luyện Kim",
             "genetic_algorithm": "Thuật Toán Di Truyền"
-        },
-        "Thuật toán thỏa mãn ràng buộc (CSP)": {
-            "ac3": "Thuật Toán AC-3",
-            "backtracking": "Thuật Toán Backtracking",
-            "backtracking_with_mrv": "Backtracking với MRV",
-            "backtracking_with_mrv_lcv": "Backtracking với MRV & LCV"
         },
         "Học tăng cường (Reinforcement Learning)": {
             "q_learning": "Q-Learning (Đã huấn luyện)",
@@ -132,11 +118,6 @@ SOLVER_FUNCTIONS = {
     "random_restart_hc": random_restart_hill_climbing, 
     "simulated_annealing": simulated_annealing,
     "genetic_algorithm": genetic_algorithm,
-    # CSP
-    "ac3": solve_puzzle_with_ac3,
-    "backtracking": lambda known_positions: solve_puzzle_with_backtracking(known_positions, use_mrv=False, use_lcv=False),
-    "backtracking_with_mrv": lambda known_positions: solve_puzzle_with_backtracking(known_positions, use_mrv=True, use_lcv=False),
-    "backtracking_with_mrv_lcv": lambda known_positions: solve_puzzle_with_backtracking(known_positions, use_mrv=True, use_lcv=True),
     # RL
     "q_learning": lambda puzzle: solve_with_q_learning(puzzle),
     "value_iteration": lambda puzzle: solve_with_value_iteration_wrapper(puzzle)
@@ -149,20 +130,8 @@ SKIP_SOLVABLE_CHECK_ALGOS = {
     "random_restart_hc",
     "simulated_annealing",
     "genetic_algorithm",
-    "ac3",
-    "backtracking",
-    "backtracking_with_mrv",
-    "backtracking_with_mrv_lcv",
     "q_learning",
     "value_iteration"
-}
-
-# Danh sách các thuật toán CSP
-CSP_ALGORITHMS = {
-    "ac3",
-    "backtracking",
-    "backtracking_with_mrv",
-    "backtracking_with_mrv_lcv"
 }
 
 # Danh sách các thuật toán RL
@@ -253,7 +222,6 @@ def solve_puzzle(algorithm_key, start_state, ui_update_callback=None, stop_event
         stop_event: (Optional) threading.Event để dừng thuật toán sớm.
         heuristic_name: (Optional) Tên của heuristic được chọn từ UI (ví dụ 'manhattan', 'misplaced')
                         Sẽ được dùng cho các thuật toán cục bộ.
-        known_positions: (Optional) Dictionary chứa các vị trí đã biết cho thuật toán CSP.
     Output:
         (result, nodes_expanded, max_fringe_or_other_metric)
         result: path (list of tuples) cho thuật toán tìm đường, 
@@ -273,24 +241,6 @@ def solve_puzzle(algorithm_key, start_state, ui_update_callback=None, stop_event
     if algo_key_lower in RL_ALGORITHMS:
         path, steps, stats = solver_func(start_state)
         return path, steps, stats
-
-    # Xử lý thuật toán CSP
-    if algo_key_lower in CSP_ALGORITHMS:
-        if known_positions is None:
-            # Nếu không có vị trí đã biết, lấy từ trạng thái hiện tại
-            known_positions = state_to_positions(start_state.data)
-        
-        # Gọi thuật toán CSP với known_positions
-        solution, stats = solver_func(known_positions)
-        
-        if solution:
-            # Chuyển đổi solution thành định dạng phù hợp với giao diện
-            # Trong trường hợp này, chỉ trả về trạng thái cuối cùng
-            return [("final", solution)], stats.get('nodes', 0) if 'nodes' in stats else stats.get('steps', 0), stats
-        else:
-            # Không tìm thấy giải pháp
-            steps = stats.get('nodes', 0) if 'nodes' in stats else stats.get('steps', 0)
-            return None, steps, stats
     
     # Xử lý is_solvable cho các thuật toán không nằm trong SKIP_SOLVABLE_CHECK_ALGOS
     if algo_key_lower not in SKIP_SOLVABLE_CHECK_ALGOS:

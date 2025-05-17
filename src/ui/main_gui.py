@@ -13,9 +13,7 @@ from PyQt5.QtGui import QFont
 # Import các thành phần GUI và logic từ các module khác
 from src.core.buzzle_logic import Buzzle, generate_random_solvable_state, is_solvable, parse_puzzle_input
 from .gui_components import (PuzzleBoard, SolutionNavigationPanel, ControlPanel,
-                            ResultPanel, SolverThread)
-# Import CSP UI components
-from .csp_gui import CSPConfigPanel
+                            ResultPanel, SolverThread, LocalSearchConfigPanel)
 # Import the new algorithm
 from src.algorithms.and_or_graph_search import NonDeterministicPuzzle, and_or_search, FAILURE, EMPTY_PLAN
 
@@ -46,7 +44,7 @@ class PuzzleWindow(QMainWindow):
         # Create and add the CSP tab
         self.csp_tab = QWidget()
         self.init_csp_tab()
-        self.tab_widget.addTab(self.csp_tab, "Thỏa mãn Ràng buộc (CSP)")
+        self.tab_widget.addTab(self.csp_tab, "Thoả mãn ràng buộc")
         
         # Set the tab widget as the central widget
         self.setCentralWidget(self.tab_widget)
@@ -78,7 +76,7 @@ class PuzzleWindow(QMainWindow):
             # You might want to initialize or refresh elements specific to this tab here
         elif current_tab_name == "Tìm kiếm với Quan sát Mù Hoàn toàn":
             print("Switched to Blind Search Tab")
-        elif current_tab_name == "Thỏa mãn Ràng buộc (CSP)":
+        elif current_tab_name == "Thoả mãn ràng buộc":
             print("Switched to CSP Tab")
         pass
 
@@ -725,10 +723,17 @@ class PuzzleWindow(QMainWindow):
     def on_solution_ready(self, path, nodes, fringe_or_pop):
         """Xử lý khi thread giải xong và có kết quả"""
         self.current_solution_path = path
-        # Cập nhật Solution Navigator
-        self.solution_navigator.set_solution(self.start_state.data, path)
-        # Cập nhật Result Panel (Text Path)
-        self.result_panel.update_path_display(self.start_state.data, path)
+        # Path should never be None at this point due to the check in SolverThread,
+        # but add additional safeguards
+        if path is not None:
+            # Cập nhật Solution Navigator
+            self.solution_navigator.set_solution(self.start_state.data, path)
+            # Cập nhật Result Panel (Text Path)
+            self.result_panel.update_path_display(self.start_state.data, path)
+        else:
+            # Safety check - this branch should not be reached since SolverThread checks for None
+            print("Warning: path is None in on_solution_ready")
+            
         # Cập nhật thống kê trên Control Panel
         algo_key = self.control_panel.algo_select_panel.get_selected_algorithm()
         
@@ -935,82 +940,14 @@ class PuzzleWindow(QMainWindow):
             # self._initial_belief_state_for_current_solution = None # Clear after full execution
 
     def init_csp_tab(self):
-        """Khởi tạo tab cho các thuật toán thỏa mãn ràng buộc (CSP)"""
-        layout = QHBoxLayout(self.csp_tab)
+        """Khởi tạo tab cho giải quyết bài toán thoả mãn ràng buộc"""
+        # Create the main layout for the CSP tab
+        layout = QVBoxLayout(self.csp_tab)
         
-        # Panel Left: CSP Config & Controls
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        
-        # CSP Config Panel
-        self.csp_config_panel = CSPConfigPanel(parent=left_panel, on_solve_callback=self.start_csp_solving)
-        left_layout.addWidget(self.csp_config_panel)
-        
-        # Panel Right: Current State Display
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        
-        # Container for Puzzles (Current and Solution)
-        boards_container = QWidget()
-        boards_layout = QHBoxLayout(boards_container)
-        
-        # State Display
-        self.csp_current_board = PuzzleBoard("Trạng Thái Hiện Tại")
-        self.csp_solution_board = PuzzleBoard("Trạng Thái Giải Pháp")
-        
-        boards_layout.addWidget(self.csp_current_board)
-        boards_layout.addWidget(self.csp_solution_board)
-        
-        right_layout.addWidget(boards_container)
-        
-        # Add panels to main layout
-        layout.addWidget(left_panel, 1)  # 1/3 of width
-        layout.addWidget(right_panel, 2)  # 2/3 of width
-        
-        # Initialize puzzle boards with empty states
-        empty_state = [[None, None, None], [None, None, None], [None, None, None]]
-        self.csp_current_board.update_board(empty_state)
-        self.csp_solution_board.update_board(empty_state)
-
-    def start_csp_solving(self, algorithm_key, initial_state, known_positions=None):
-        """Bắt đầu quá trình giải bằng thuật toán CSP"""
-        # Hiển thị trạng thái hiện tại (có thể còn trống)
-        self.csp_current_board.update_board(initial_state)
-        self.csp_solution_board.update_board([[None, None, None], [None, None, None], [None, None, None]])  # Reset solution board
-        
-        # Cập nhật status
-        self.status_label.setText(f"Đang giải bằng thuật toán {algorithm_key}...")
-        self.progress_bar.setVisible(True)
-        
-        # Tạo thread để giải
-        self.csp_solver_thread = SolverThread(algorithm_key, initial_state, known_positions=known_positions)
-        self.csp_solver_thread.solution_ready.connect(self.on_csp_solution_ready)
-        self.csp_solver_thread.error_occurred.connect(self.on_solver_error)
-        self.csp_solver_thread.finished.connect(self.on_solver_finished)
-        self.csp_solver_thread.start()
-        
-    def on_csp_solution_ready(self, path, nodes, stats):
-        """Xử lý khi thread giải CSP xong và có kết quả"""
-        # Cập nhật status
-        self.progress_bar.setVisible(False)
-        
-        if path and path[0][0] == "final" and path[0][1]:
-            # Hiển thị giải pháp
-            self.csp_solution_board.update_board(path[0][1])
-            self.status_label.setText(f"Đã tìm thấy giải pháp bằng thuật toán CSP")
-            is_success = True
-        else:
-            # Không tìm thấy giải pháp
-            self.status_label.setText(f"Không tìm thấy giải pháp bằng thuật toán CSP")
-            is_success = False
-            
-        # Chuyển đổi stats thành dict nếu nó là loại khác
-        stats_dict = stats
-        if not isinstance(stats, dict):
-            stats_dict = {'nodes': nodes, 'stats': stats}
-            
-        # Cập nhật thông tin kết quả trong CSP config panel
-        self.csp_config_panel.update_result(is_success, stats_dict)
+        # Create the CSP Widget and add it to the layout
+        from src.ui.csp_widget import CSPWidget
+        self.csp_widget = CSPWidget()
+        layout.addWidget(self.csp_widget)
 
 if __name__ == '__main__':
     # Bắt buộc dùng QApplication

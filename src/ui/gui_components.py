@@ -1,3 +1,4 @@
+import traceback
 from PyQt5.QtWidgets import (QWidget, QGridLayout, QVBoxLayout, QHBoxLayout,
                            QPushButton, QLabel, QLineEdit, QTextEdit,
                            QSplitter, QProgressBar, QGroupBox, QRadioButton,
@@ -13,47 +14,34 @@ from src.algorithms.local_search_algorithms import manhattan_distance, number_of
 
 # --- Solver Thread ---
 class SolverThread(QThread):
-    """Thread riêng cho việc giải puzzle để không block UI"""
-    solution_ready = pyqtSignal(list, int, int) # path, nodes, fringe/pop_size
+    """Thread riêng để chạy thuật toán, tránh đóng băng giao diện"""
+    
+    solution_ready = pyqtSignal(list, int, object)
     error_occurred = pyqtSignal(str)
-
-    def __init__(self, algorithm_key, start_state, heuristic_key=None, known_positions=None):
+    
+    def __init__(self, algorithm_key, start_state, heuristic_key=None):
         super().__init__()
         self.algorithm_key = algorithm_key
-        self.start_state = start_state # Nhận Buzzle object hoặc state_data cho CSP
-        self.heuristic_key = heuristic_key # Store heuristic_key
-        self.known_positions = known_positions # Lưu vị trí đã biết cho thuật toán CSP
-
+        self.start_state = start_state
+        self.heuristic_key = heuristic_key
+    
     def run(self):
+        """Chạy thread"""
         try:
-            # Gọi hàm solve_puzzle từ algorithm_manager cho các thuật toán
-            result, nodes, fringe_or_pop = solve_puzzle(
+            path, nodes, maxf = solve_puzzle(
                 self.algorithm_key, 
-                self.start_state,
-                heuristic_name=self.heuristic_key, # Pass heuristic_key
-                known_positions=self.known_positions # Pass known_positions
+                self.start_state, 
+                heuristic_name=self.heuristic_key
             )
-            
-            # Đối với thuật toán tìm kiếm cục bộ, kết quả có thể là trạng thái thay vì đường đi
-            # Chuyển đổi thành định dạng đường đi để xử lý thống nhất
-            if result is None:
-                # Không tìm thấy giải pháp, sử dụng đường đi rỗng
-                path = []
-            elif isinstance(result, list) and len(result) > 0 and isinstance(result[0], tuple):
-                # Kết quả đã ở định dạng đường đi [(move, state), ...]
-                path = result
+            # Add a check for path being None before emitting the signal
+            if path is not None:
+                self.solution_ready.emit(path, nodes, maxf)
             else:
-                # Tạo đường đi với một bước duy nhất hiển thị trạng thái cuối cùng
-                # Điều này không nên xảy ra với mã algorithm_manager đã cập nhật
-                print("Cảnh báo: Chuyển đổi định dạng kết quả không mong đợi sang định dạng đường đi")
-                path = [("final", result)]
-                
-            self.solution_ready.emit(path, nodes, fringe_or_pop)
+                # Handle case where path is None
+                self.error_occurred.emit(f"Không thể tìm thấy đường đi. Thuật toán {self.algorithm_key} không tìm thấy giải pháp.")
         except Exception as e:
-            import traceback
-            print(f"Lỗi trong SolverThread: {e}")
-            traceback.print_exc() # In traceback để debug
-            self.error_occurred.emit(f"Lỗi trong quá trình giải: {e}")
+            traceback.print_exc()
+            self.error_occurred.emit(str(e))
 
 
 # --- Puzzle Board Widget ---
@@ -607,58 +595,6 @@ class ResultPanel(QWidget):
                 "     c. Lọc các trạng thái không tạo ra quan sát này\n"
                 "  3. Mục tiêu: Thu hẹp trạng thái niềm tin xuống chỉ còn trạng thái đích\n\n"
                 "- Ứng dụng: Robot, mạng cảm biến, bất kỳ lĩnh vực nào có khả năng cảm biến hạn chế"
-            ),
-            # Thuật toán CSP
-            "ac3": (
-                "Thuật Toán AC-3 (Arc Consistency Algorithm):\n\n"
-                "- Thuật toán tuyên truyền ràng buộc dựa trên tính chất nhất quán cung (arc consistency).\n"
-                "- Mục tiêu: Thu hẹp miền giá trị của mỗi biến mà không loại bỏ bất kỳ giải pháp nào.\n"
-                "- Cơ chế hoạt động:\n"
-                "  1. Duy trì một hàng đợi các cung (Xi, Xj) cần kiểm tra.\n"
-                "  2. Với mỗi cung, kiểm tra xem mỗi giá trị trong miền của Xi có ít nhất một giá trị tương thích trong miền của Xj không.\n"
-                "  3. Nếu phát hiện một giá trị không tương thích, loại bỏ nó khỏi miền của Xi.\n"
-                "  4. Nếu miền của Xi bị thu hẹp, thêm tất cả các cung (Xk, Xi) vào hàng đợi để kiểm tra lại.\n"
-                "- Ưu điểm: Hiệu quả trong việc loại bỏ sớm các giá trị không khả thi.\n"
-                "- Nhược điểm: Có thể không tìm ra giải pháp duy nhất cho một số vấn đề phức tạp.\n"
-                "- Ứng dụng trong 8-puzzle: Tìm vị trí cho các ô số từ 0-8 sao cho không vi phạm ràng buộc 'tất cả các ô phải ở vị trí khác nhau'."
-            ),
-            "backtracking": (
-                "Thuật Toán Backtracking:\n\n"
-                "- Thuật toán tìm kiếm có hệ thống để tìm tất cả (hoặc một) lời giải thỏa mãn các ràng buộc.\n"
-                "- Cơ chế hoạt động:\n"
-                "  1. Chọn một biến chưa được gán giá trị.\n"
-                "  2. Thử gán các giá trị từ miền của biến đó.\n"
-                "  3. Kiểm tra xem phép gán có vi phạm bất kỳ ràng buộc nào không.\n"
-                "  4. Nếu không vi phạm, đệ quy với các biến còn lại.\n"
-                "  5. Nếu vi phạm hoặc không tìm thấy giải pháp, quay lui và thử giá trị khác.\n"
-                "- Ưu điểm: Đơn giản, đảm bảo tìm thấy giải pháp nếu tồn tại.\n"
-                "- Nhược điểm: Có thể chậm với không gian trạng thái lớn.\n"
-                "- Ứng dụng trong 8-puzzle: Tìm vị trí cho các ô số từ 0-8 dựa trên các ràng buộc vị trí đã biết."
-            ),
-            "backtracking_with_mrv": (
-                "Thuật Toán Backtracking với MRV (Minimum Remaining Values):\n\n"
-                "- Mở rộng của backtracking với heuristic chọn biến thông minh hơn.\n"
-                "- MRV (Minimum Remaining Values):\n"
-                "  * Chọn biến có ít giá trị khả thi nhất trong miền.\n"
-                "  * Giúp phát hiện sớm các đường nhánh không có giải pháp (fail-first).\n"
-                "- Cơ chế hoạt động: Tương tự backtracking cơ bản, nhưng ở bước 1, thay vì chọn biến theo thứ tự cố định, chọn biến có ít giá trị hợp lệ nhất.\n"
-                "- Ưu điểm: Thường hiệu quả hơn backtracking cơ bản, đặc biệt với bài toán lớn.\n"
-                "- Ứng dụng trong 8-puzzle: Ưu tiên chọn các ô có ít vị trí khả thi nhất để gán trước."
-            ),
-            "backtracking_with_mrv_lcv": (
-                "Thuật Toán Backtracking với MRV & LCV:\n\n"
-                "- Kết hợp hai heuristic: MRV (chọn biến) và LCV (chọn giá trị).\n"
-                "- MRV (Minimum Remaining Values):\n"
-                "  * Chọn biến có ít giá trị khả thi nhất trong miền.\n"
-                "- LCV (Least Constraining Value):\n"
-                "  * Chọn giá trị ít gây ràng buộc nhất đối với các biến khác.\n"
-                "  * Ưu tiên giá trị giữ lại nhiều khả năng nhất cho các biến còn lại.\n"
-                "- Cơ chế hoạt động:\n"
-                "  1. Chọn biến với MRV.\n"
-                "  2. Sắp xếp giá trị theo LCV và thử theo thứ tự đó.\n"
-                "  3. Các bước còn lại giống backtracking thông thường.\n"
-                "- Ưu điểm: Thường hiệu quả nhất trong các biến thể backtracking.\n"
-                "- Ứng dụng trong 8-puzzle: Chọn ô có ít vị trí khả thi nhất, và ưu tiên đặt vào vị trí ít ảnh hưởng đến các ô khác nhất."
             ),
             # Thuật toán RL
             "q_learning": (
